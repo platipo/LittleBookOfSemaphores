@@ -1,10 +1,20 @@
 @inproceedings{reek,
-author = "Kenneth A. Reek",
-title = "Design Patterns for Semaphores",
-booktitle = "ACM SIGCSE",
-year = 2004
+author = {Reek, Kenneth A.},
+title = {Design Patterns for Semaphores},
+booktitle = {Proceedings of the 35th SIGCSE Technical Symposium on Computer Science Education},
+series = {SIGCSE '04},
+year = {2004},
+isbn = {1-58113-798-2},
+location = {Norfolk, Virginia, USA},
+pages = {320--324},
+numpages = {5},
+url = {http://doi.acm.org/10.1145/971300.971412},
+doi = {10.1145/971300.971412},
+acmid = {971412},
+publisher = {ACM},
+address = {New York, NY, USA},
+keywords = {design pattern, operating system, semaphore, synchronization},
 }
-
 
 @book{hailperin,
 author = "Max Hailperin",
@@ -14,31 +24,33 @@ year = 2006
 }
 
 @book{butenhof,
-author = "David R. Butenhof",
+author = "Butenhof, David R.",
 title = "Programming with POSIX Threads",
 publisher = "Addison-Wesley",
 year = 1997
 }
 
 @book{andrews,
-author = "Gregory R. Andrews",
+author = "Andrews, Gregory R.",
 title = "Concurrent Programming: Principles and Practice",
 publisher = "Addison-Wesley",
 year = 1991
 }
 
-
 @techreport{patil,
-author = "Suhas Patil",
+author = "Patil, Suhas S.",
 title = "Limitations and Capabilities of {Dijkstra}'s Semaphore Primitives
 for Coordination Among Processes",
+publisher = "Cambridge, Mass.: MIT, Project MAC, Computation Structures 
+Group Memo 57",
 number = "",
 institution = "MIT",
+month = feb,
 year = 1971
 }
 
 @article{parnas,
-author = "David L. Parnas",
+author = "Parnas, David L.",
 title = "On a solution to the cigarette smokers' problem without
 conditional statements",
 journal = "Communications of the ACM",
@@ -50,14 +62,17 @@ pages = "181--183"
 }
 
 @article{morris,
-author = "Joseph M. Morris",
+author = "Morris, Joseph M.",
 title = "A starvation-free solution to the mutual exclusion problem",
 journal = "Information Processing Letters",
 volume = 8,
 numer = 2,
 month = "February",
 year = 1979,
-pages = "76--80"
+pages = "76--80",
+issn = "0020-0190",
+doi = "https://doi.org/10.1016/0020-0190(79)90147-9",
+url = "http://www.sciencedirect.com/science/article/pii/0020019079901479"
 }
 
 @book{stallings,
@@ -69,7 +84,7 @@ year = 2000
 }
 
 @book{tanenbaum,
-author = "Andrew S. Tanenbaum",
+author = "Tanenbaum, Andrew S.",
 title = "Modern Operating Systems",
 edition = "Second",
 publisher = "Prentice Hall",
@@ -77,79 +92,53 @@ year = 2001
 }
 
 @book{silberschatz,
-author = "Abraham Silberschatz and Peter Baer Galvin",
+author={Silberschatz, Abraham and Galvin, Peter B and Gagne, Greg and Silberschatz, A},
 title = "Operating Systems Concepts",
 edition = "Fifth",
-publisher = "Addison Wesley",
+publisher = {Addison-Wesley Reading},
 year = 1997
 }
 
-
-
 @article{dijkstra65,
-author = "Edsger Dijkstra",
+author = "Dijkstra, Edsger W.",
 title = "Cooperating sequential processes",
 publisher = "Technological University, Eindhoven, The Netherlands", 
+journal={The Origin of Concurrent Programming},
 year = 1965,
 note = "Reprinted in {\em Programming Languages}, F. Genuys, ed.,
-          Academic Press, New York 1968"
+            Academic Press, New York 1968",
+pages = {65--138},
+doi={10.1007/978-1-4757-3472-0_2}
 }
 
-
 @article{gingras90dining,
-author = "Armando R. Gingras",
+author = "Gingras, Armando R.",
 title = "Dining philosophers revisited",
-journal = "ACM SIGCSE Bulletin",
+journal = {SIGCSE Bull.},
 volume = 22,
 number = 3,
 pages = "21--24, 28",
-month = "September",
-year = 1990
+month = aug,
+year = 1990,
+issn = {0097-8418},
+url = {http://doi.acm.org/10.1145/101085.101091},
+doi = {10.1145/101085.101091},
+acmid = {101091}
 }
 
 @article{yue91dining,
-author = "Kwok-bun Yue",
-title = "Dining philosophers revisited, again",
-journal = "ACM SIGCSE Bulletin",
+author = {Yue, Kwok-bun},
+title = {Dining Philosophers Revisited, Again},
+publisher = {ACM},
+journal = {SIGCSE Bull.},
 volume = 23,
 number = 2,
-pages = "60--64",
+pages = {60--64},
 month = "June",
-year = 1991
-}
-
-
-@Book{Patil71,
-  author =       "S. S. Patil",
-  title =        "Limitations and Capabilities of Dijkstra's Semaphore
-                 Primitives for Coordination among Processes.",
-  publisher =    "Cambridge, Mass.: MIT, Project MAC, Computation
-                 Structures Group Memo 57",
-  month =        feb,
-  year =         "1971",
-}
-
-@Article{Morris:1979:SFS,
-  author =       "J. M. Morris",
-  title =        "A starvation-free solution to the mutual exclusion
-                 problem",
-  journal =      j-INFO-PROC-LETT,
-  volume =       "8",
-  number =       "2",
-  pages =        "76--80",
-  day =          "15",
-  month =        feb,
-  year =         "1979",
-  CODEN =        "IFPLAT",
-  ISSN =         "0020-0190",
-  bibdate =      "Tue Nov 17 10:49:43 MST 1998",
-  note =         "See comments \cite{Annot:1986:CMS}.",
-  acknowledgement = ack-nhfb,
-  classification = "C4240 (Programming and algorithm theory); C6150J
-                 (Operating systems)",
-  corpsource =   "Dept. of Computer Sci., Trinity Coll., Dublin,
-                 Ireland",
-  keywords =     "algorithm; binary semaphores; multi-access systems;
-                 mutual exclusion; programming theory; starvation",
-  treatment =    "T Theoretical or Mathematical",
+year = 1991,
+issn = {0097-8418},
+numpages = {5},
+url = {http://doi.acm.org/10.1145/122106.122119},
+doi = {10.1145/122106.122119},
+acmid = {122119}
 }
