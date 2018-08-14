@@ -51,14 +51,28 @@
 \notcompacttrue
 %\notcompactfalse
 
+\ifnotcompact
+\colorlet{PUZZCOLFRAM}{blue!30!black!85}
+\colorlet{PUZZCOLBACK}{gray!8!blue!10}
+\colorlet{LSTCOLTITL}{blue!20!black!65}
+\colorlet{LSTCOLFRAM}{gray!45!blue!35}
+\colorlet{LSTCOLBACK}{gray!7!blue!7}
+\else
+\colorlet{PUZZCOLFRAM}{gray!70!black!85}
+\colorlet{PUZZCOLBACK}{gray!8}
+\colorlet{LSTCOLTITL}{gray!70!black!65}
+\colorlet{LSTCOLFRAM}{gray!45}
+\colorlet{LSTCOLBACK}{gray!5}
+\fi
+
 \newtcolorbox{puzzlebox}[1]{reset,
-    colback=gray!8, colframe=gray!70!black!85,
+    colback=PUZZCOLBACK, colframe=PUZZCOLFRAM,
     breakable, fonttitle=\large\bfseries,title=#1,
     subtitle style={boxrule=0.4pt,before skip=\baselineskip}
 }
 \newtcblisting{lsthalfbox}[2][]{%
     before=, after=\hfill, width=(\linewidth-4mm)/2, title=#2, #1,
-    colbacktitle=gray!70!black!65, colframe=gray!45, colback=gray!5,
+    colbacktitle=LSTCOLTITL, colframe=LSTCOLFRAM, colback=LSTCOLBACK,
     enhanced, attach boxed title to top center={yshift=-2.5mm},
     boxed title style={size=small},
     fonttitle=\bfseries, listing options={style=tcblatex,
@@ -67,7 +81,7 @@
 }
 \newtcblisting{lstbox}[1]{%
     breakable, title=#1,
-    colbacktitle=gray!70!black!75, colframe=gray!45, colback=gray!5,
+    colbacktitle=LSTCOLTITL, colframe=LSTCOLFRAM, colback=LSTCOLBACK,
     enhanced, attach boxed title to top center={yshift=-2.5mm},
     boxed title style={size=small},
     fonttitle=\bfseries, listing options={style=tcblatex,
@@ -76,7 +90,7 @@
 }
 \newtcbinputlisting{\lstinputbox}[2]{%
     breakable, title=#1, listing file={#2},
-    colbacktitle=gray!70!black!75, colframe=gray!45, colback=gray!5,
+    colbacktitle=LSTCOLTITL, colframe=LSTCOLFRAM, colback=LSTCOLBACK,
     enhanced, attach boxed title to top center={yshift=-2.5mm},
     boxed title style={size=small},
     fonttitle=\bfseries, listing options={style=tcblatex,
