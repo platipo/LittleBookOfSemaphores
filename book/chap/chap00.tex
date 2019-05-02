@@ -1,0 +1,196 @@
+Most undergraduate Operating Systems textbooks have a module on
+Synchronization, which usually presents a set of primitives
+(mutexes, semaphores, monitors, and sometimes condition variables),
+and classical problems like readers-writers and
+producers-consumers.
+
+When I took the Operating Systems class at Berkeley, and taught it at
+Colby College, I got the impression that most students were able to
+understand the solutions to these problems, but few would have been
+able to produce them, or solve similar problems.
+
+One reason students don't understand this material deeply is that
+it takes more time, and more practice, than most classes can spare.
+Synchronization is just one of the modules competing for space in
+an Operating Systems class, and I'm not sure I can argue that it is
+the most important.  But I do think it is one of the most challenging,
+interesting, and (done right) fun.
+
+I wrote the first edition this book with the goal of identifying
+synchronization idioms and patterns that could be 
+understood in isolation and then assembled to solve complex problems.
+This was a challenge, because synchronization code doesn't compose
+well; as the number of components increases, the number of interactions
+grows unmanageably.
+
+Nevertheless, I found patterns in the solutions I saw, and discovered
+at least some systematic approaches to assembling solutions that are
+demonstrably correct.
+
+I had a chance to test this approach when I taught Operating Systems
+at Wellesley College.  I used the first edition of {\em The Little
+Book of Semaphores} along with one of the standard textbooks, and I
+taught Synchronization as a concurrent thread for the duration of the
+course.  Each week I gave the students a few pages from the book,
+ending with a puzzle, and sometimes a hint.  I told them not to look
+at the hint unless they were stumped.
+
+I also gave them some tools for testing their solutions: a small
+magnetic whiteboard where they could write code, and a stack of
+magnets to represent the threads executing the code.
+
+The results were dramatic.  Given more time to absorb the material,
+students demonstrated a depth of understanding I had not seen before.
+More importantly, most of them were able to solve most of the puzzles.
+In some cases they reinvented classical solutions; in other cases
+they found creative new approaches.
+
+When I moved to Olin College, I took the next step and created a
+half-class, called Synchronization, which covered
+{\em The Little Book of Semaphores} and also the implementation of
+synchronization primitives in x86 Assembly Language, POSIX, and
+Python.
+
+The students who took the class
+helped me find errors in the first edition and several
+of them contributed solutions that were better than mine.  At the
+end of the semester, I asked each of them to write a new,
+original problem (preferably with a solution).  I have added their
+contributions to the second edition.
+
+Also since the first edition appeared, Kenneth Reek presented the
+article ``Design Patterns for Semaphores'' at the ACM Special Interest
+Group for Computer Science Education.  He presents a problem, which
+I have cast as the Sushi Bar Problem, and two solutions that demonstrate
+patterns he calls ``Pass the baton'' and ``I'll do it for you.''
+Once I came to appreciate these patterns, I was able to apply them
+to some of the problems from the first edition and produce solutions
+that I think are better.
+
+One other change in the second edition is the syntax.  After I wrote
+the first edition, I learned Python, which is not only a great
+programming language; it also makes a great pseudocode language.  So I
+switched from the C-like syntax in the first edition to syntax
+that is pretty close to executable Python\footnote{The primary
+difference is that I sometimes use indentation to indicate code that
+is protected by a mutex, which would cause syntax errors in Python.}.
+In fact, I have written a simulator that can execute many of the
+solutions in this book.
+
+Readers who are not familiar with Python will (I hope) find it mostly
+obvious.  In cases where I use a Python-specific feature, I explain the
+syntax and what it means.  I hope that these changes make the book
+more readable.
+
+The pagination of this book might seem peculiar, but there is a method
+to my whitespace.  After each puzzle, I leave enough space that the
+hint appears on the next sheet of paper and the solution on the next
+sheet after that.  When I use this book in my class, I hand it out a
+few pages at a time, and students collect them in a binder.  My
+pagination system makes it possible to hand out a problem without
+giving away the hint or the solution.  Sometimes I fold and staple the
+hint and hand it out along with the problem so that students can
+decide whether and when to look at the hint.  If you print the book
+single-sided, you can discard the blank pages and the system still
+works.
+
+This is a Free Book, which means that anyone is welcome to read,
+copy, modify and redistribute it, subject to the restrictions of the
+license.  I hope that people
+will find this book useful, but I also hope they will help continue
+to develop it by sending in corrections, suggestions, and additional
+material.  Thanks!
+
+\vspace{0.3in}
+
+\noindent Allen B. Downey \\
+\noindent Needham, MA \\
+\noindent June 1, 2005 \\
+
+
+\section*{Contributor's list}
+
+The following are some of the people who have contributed to this
+book:
+
+\begin{itemize}
+
+\item Many of the problems in this book are variations of classical
+problems that appeared first in technical articles and then in textbooks.
+Whenever I know the origin of a problem or solution, I acknowledge it
+in the text.
+
+\item I also thank the students at Wellesley College who worked with
+the first edition of the book, and the students at Olin College who
+worked with the second edition.
+
+\item Se Won sent in a small but important correction in my presentation
+of Tanenbaum's solution to the Dining Philosophers Problem.
+
+\item Daniel Zingaro punched a hole in the Dancer's problem, which
+provoked me to rewrite that section.  I can only hope that it makes more
+sense now.  Daniel also pointed out an error in a previous version of
+my solution to the H$_2$O problem, and then wrote back a year later
+with some typos.
+
+\item Thomas Hansen found a typo in the Cigarette smokers problem.
+
+\item Pascal R\"{u}tten pointed out several typos, including my embarrassing
+misspelling of Edsger Dijkstra.
+
+\item Marcelo Johann pointed out an error in my solution to the
+Dining Savages problem, and fixed it!
+
+\item Roger Shipman sent a whole passel of corrections as well as
+an interesting variation on the Barrier problem.
+
+\item Jon Cass pointed out an omission in the discussion of dining
+philosophers.
+
+\item Krzysztof Ko\'{s}ciuszkiewicz sent in several corrections, including
+a missing line in the Fifo class definition.
+
+\item Fritz Vaandrager at the Radboud University Nijmegen in the
+Netherlands and his students Marc Schoolderman, Manuel Stampe and Lars
+Lockefeer used a tool called UPPAAL to check several of the solutions
+in this book and found errors in my solutions to the Room Party problem
+and the Modus Hall problem.
+
+\item Eric Gorr pointed out an explanation in Chapter 3 that was
+not exactly right.
+
+\item Jouni Lepp\"{a}j\"{a}rvi helped clarify the origins of semaphores.
+
+\item Christoph Bartoschek found an error in a solution to
+the exclusive dance problem.
+
+\item Eus found a typo in Chapter 3.
+
+\item Tak-Shing Chan found an out-of-bounds error in {\tt counter\_mutex.c}.
+
+\item Roman V. Kiseliov made several suggestions for improving
+the appearance of the book, and helped me with some \LaTeX~issues.
+
+\item Alejandro C\'{e}spedes is working on the Spanish translation of this
+book and found some typos.
+
+\item Erich Nahum found a problem in my adaptation of Kenneth Reek's
+  solution to the Sushi Bar Problem.
+
+\item Martin Storsj\"{o} sent a correction to the generalized smokers problem.
+
+\item Cris Hawkins pointed out an unused variable.
+
+\item Adolfo Di Mare found the missing ``and''.
+
+\item Simon Ellis found a typo.
+
+\item Benjamin Nash found a typo, an error in one solution, and
+a malfeature in another.
+
+\item Alejandro Pulver found a problem with the Barbershop solution.
+
+\end{itemize}
+
+% endcontrib
+

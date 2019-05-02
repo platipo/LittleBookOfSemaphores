@@ -1,0 +1,1253 @@
+\section{The sushi bar problem}
+
+This problem was inspired by a problem proposed by Kenneth Reek \cite{reek}.
+Imagine a sushi bar with 5 seats.  If you arrive while there is an
+empty seat, you can take a seat immediately.  But if you arrive when
+all 5 seats are full, that means that all of them are dining together,
+and you will have to wait for the entire party to leave before you
+sit down.
+
+\begin{puzzlebox}{Puzzle}
+Write code for customers entering and
+leaving the sushi bar that enforces these requirements.
+
+%% \clearemptydoublepage
+%%% \subsec {Sushi bar hint}
+\tcbsubtitle{Hint}
+
+Here are the variables I used:
+
+\begin{lstbox}{Sushi bar hint}
+eating = waiting = 0
+mutex = Semaphore(1)
+block = Semaphore(0)
+must_wait = False
+\end{lstbox}
+
+{\tt eating} and {\tt waiting} keep track of the number of
+threads sitting at the bar and waiting.  {\tt mutex} protects
+both counters.  {\tt must\_wait} indicates that the bar is (or
+has been) full, som incoming customers have to block
+on {\tt block}.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec {Sushi bar non-solution}
+\sub{Sushi bar non-solution}
+
+Here is an incorrect solution Reek uses to illustrate one
+of the difficulties of this problem.
+
+\begin{lstbox}{Sushi bar non-solution}
+mutex.wait()
+if must_wait:
+    waiting += 1
+    mutex.signal()
+    block.wait()
+
+    mutex.wait()      # reacquire mutex (*\label{sushi1}*)
+    waiting -= 1
+
+eating += 1
+must_wait = (eating == 5)
+mutex.signal()
+
+# eat sushi
+
+mutex.wait()
+eating -= 1
+if eating == 0:
+    n = min(5, waiting)
+    block.signal(n)
+    must_wait = False
+mutex.signal()
+\end{lstbox}
+
+\vspace{1em}
+What's wrong with this solution?
+
+
+%% \clearemptydoublepage
+%%% \subsec {Sushi bar non-solution}
+\sub{Sushi bar non-solution}
+
+The problem is at Line~\ref{sushi1}.  If a customer arrives
+while the bar is full, he has to give up the mutex while he
+waits so that other customers can leave.  When the last customer
+leaves, she signals {\tt block}, which wakes up at least some
+of the waiting customers, and clears {\tt must\_wait}.
+
+But when the customers wake up, they have to get the mutex
+back, and that means they have to compete with incoming new
+threads.  If new threads arrive and get the mutex first,
+they could take all the seats before the waiting threads.
+This is not just a question of injustice; it is possible for more
+than 5 threads to be in the critical section concurrently, which
+violates the synchronization constraints.
+
+Reek provides two solutions to this problem, which appear
+in the next two sections.
+
+\begin{puzzlebox}{Puzzle}
+See if you can come up with two different correct solutions!
+\tcbsubtitle{Hint}
+Neither solution uses any additional variables.
+\end{puzzlebox}
+
+%% \clearemptydoublepage
+%%% \subsec {Sushi bar solution \#1}
+\sub{Sushi bar solution \#1}
+
+The only reason a waiting customer has to reacquire the mutex
+is to update the state of {\tt eating} and {\tt waiting}, so
+one way to solve the problem is to make the departing customer,
+who already has the mutex, do the updating.
+
+\begin{lstbox}{Sushi bar solution \#1}
+mutex.wait()
+if must_wait:
+    waiting += 1
+    mutex.signal()
+    block.wait()
+else:
+    eating += 1
+    must_wait = (eating == 5)
+    mutex.signal()
+
+# eat sushi
+
+mutex.wait()
+eating -= 1
+if eating == 0:
+    n = min(5, waiting)
+    waiting -= n
+    eating += n
+    must_wait = (eating == 5)
+    block.signal(n)
+mutex.signal()
+\end{lstbox}
+
+When the last departing customer releases the mutex, 
+{\tt eating} has already been updated, so newly arriving customers
+see the right state and block if necessary.  Reek calls this
+pattern ``I'll do it for you,'' because the departing thread
+is doing work that seems, logically, to belong to the waiting
+threads.
+
+A drawback of this approach is that is it a little more difficult
+to confirm that the state is being updated correctly.
+
+
+%% \clearemptydoublepage
+%%% \subsec {Sushi bar solution \#2}
+\sub{Sushi bar solution \#2}
+
+Reek's alternative solution is based on the counterintuitive
+notion that we can transfer a mutex from one thread to another!
+In other words, one thread can acquire a lock and then another
+thread can release it.  As long as both threads understand
+that the lock has been transferred, there is nothing wrong with
+this.
+
+\begin{lstbox}{Sushi bar solution \#2}
+mutex.wait()
+if must_wait:
+    waiting += 1
+    mutex.signal()
+    block.wait()     # when we resume, we have the mutex
+    waiting -= 1
+
+eating += 1
+must_wait = (eating == 5)
+if waiting and not must_wait:
+    block.signal()            # and pass the mutex
+else:
+    mutex.signal()
+
+# eat sushi
+
+mutex.wait()
+eating -= 1
+if eating == 0: must_wait = False
+
+if waiting and not must_wait:
+    block.signal()            # and pass the mutex
+else:
+    mutex.signal()
+\end{lstbox}
+
+If there are fewer than 5 customers at the bar and no one waiting, an
+entering customer just increments {\tt eating} and releases the
+mutex.  The fifth customer sets {\tt must\_wait}.
+
+If {\tt must\_wait} is set, entering customers block until the last
+customer at the bar clears {\tt must\_wait} and signals {\tt block}.
+It is understood that the signaling thread gives up the mutex and the
+waiting thread receives it.  Keep in mind, though, that this is an
+invariant understood by the programmer, and documented in the
+comments, but not enforced by the semantics of semaphores.  It is up
+to us to get it right.
+
+When the waiting thread resumes, we understand that it has
+the mutex.  If there are other threads waiting,
+it signals {\tt block} which, again,
+passes the mutex to a waiting thread.  This process
+continues, with each thread passing the mutex to the next until
+there are no more chairs or no more waiting threads.  In either
+case, the last thread releases the mutex and goes to sit down.
+
+Reek calls this pattern ``Pass the baton,'' since the mutex
+is being passed from one thread to the next like a baton in a
+relay race.
+One nice thing about this solution is that it is easy to confirm
+that updates to {\tt eating} and {\tt waiting} are consistent.
+A drawback is that it is harder to confirm that the mutex is
+being used correctly.
+
+
+% \clearemptydoublepage
+\blankpage
+\section{The child care problem}
+
+Max Hailperin wrote this problem for his textbook {\em Operating
+Systems and Middleware} \cite{hailperin}.  At a child care center,
+state regulations require that there is always one adult present for
+every three children.
+
+\begin{puzzlebox}{Puzzle}
+Write code for child threads and adult threads that enforces
+this constraint in a critical section.
+
+
+%% \clearemptydoublepage
+%%% \subsec {Child care hint}
+\tcbsubtitle{Hint}
+
+Hailperin suggests that you can {\em almost} solve this problem
+with one semaphore.
+
+\begin{lstbox}{Child care hint}
+multiplex = Semaphore(0)
+\end{lstbox}
+
+{\tt multiplex} counts the number of tokens available, where each token
+allows a child thread to enter.  As adults enter, they signal {\tt
+multiplex} three times; as they leave, they {\tt wait} three times.
+But there is a problem with this solution.
+
+\vspace{1em}
+What is the problem?
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec {Child care non-solution}
+\sub{Child care non-solution}
+
+Here is what the adult code looks like in Hailperin's non-solution:
+
+\begin{lstbox}{Child care non-solution (adult)}
+multiplex.signal(3)
+
+# critical section
+
+multiplex.wait()
+multiplex.wait()
+multiplex.wait()
+\end{lstbox}
+
+The problem is a potential deadlock.  Imagine that there are
+three children and two adults in the child care center.  The
+value of {\tt multiplex} is 3, so either adult should be able
+to leave.  But if both adults start to leave at the same time,
+they might divide the available tokens between them, and both
+block.
+
+\begin{puzzlebox}{Puzzle}
+Solve this problem with a minimal change.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec {Child care solution}
+\sub{Child care solution}
+
+Adding a mutex solves the problem:
+
+\begin{lstbox}{Child care solution (adult)}
+multiplex.signal(3)
+
+# critical section
+
+mutex.wait()
+    multiplex.wait()
+    multiplex.wait()
+    multiplex.wait()
+mutex.signal()
+\end{lstbox}
+
+Now the three {\tt wait} operations are atomic.  If there
+are three tokens available, the thread that gets the mutex
+will get all three tokens and exit.  If there are fewer
+tokens available, the first thread will block in the mutex
+and subsequent threads will queue on the mutex.
+
+\blankpage
+\subsec {Extended child care problem}
+
+One feature of this solution is that an adult thread waiting to leave
+can prevent child threads from entering.
+
+Imagine that there are 4 children and two adults, so the value of the
+multiplex is 2.  If one of the adults tries to leave, she will take
+two tokens and then block waiting for the third.  If a child thread
+arrives, it will wait even though it would be legal to enter.
+From the point of view of the adult trying to leave, that might
+be just fine, but if you are trying to maximize the utilization
+of the child care center, it's not.
+
+\begin{puzzlebox}{Puzzle}
+Write a solution to this problem that avoids unnecessary
+waiting.
+
+\vspace{0.5em}
+Hint: think about the dancers in Section~\ref{dancers}.
+
+
+
+%% \clearemptydoublepage
+%%% \subsec {Extended child care hint}
+\tcbsubtitle{Hint}
+
+Here are the variables I used in my solution:
+
+\begin{lstbox}{Extended child care hint}
+children = adults = waiting = leaving = 0
+mutex = Semaphore(1)
+childQueue = Semaphore(0)
+adultQueue = Semaphore(0)
+\end{lstbox}
+
+{\tt children}, {\tt adults}, {\tt waiting} and {\tt leaving}
+keep track of the number of children, adults, children waiting
+to enter, and adults waiting to leave; they are protected by
+{\tt mutex}.
+
+Children wait on {\tt childQueue} to enter, if necessary.
+Adults wait on {\tt adultQueue} to leave.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec {Extended child care solution}
+\sub{Extended child care solution}
+
+This solution is more complicated than
+Hailperin's elegant solution, but it is mostly a combination
+of patterns we have seen before: a scoreboard, two queues,
+and ``I'll do it for you''.
+
+Here is the child code:
+
+\begin{lstbox}{Extended child care solution (child)}
+mutex.wait()
+    if children < 3 * adults:
+        children++
+        mutex.signal()
+    else:
+        waiting++
+        mutex.signal()
+        childQueue.wait()
+
+# critical section
+
+mutex.wait()
+    children--
+    if leaving and children <= 3 * (adults-1):
+        leaving--
+        adults--
+        adultQueue.signal() 
+mutex.signal()
+\end{lstbox}
+
+As children enter, they check whether there are enough adults
+and either (1) increment {\tt children} and enter or (2) increment
+{\tt waiting} and block.
+When they exit, they check for an adult thread waiting to leave and
+signal it if possible.
+
+%% \newpage
+Here is the code for adults:
+
+\begin{lstbox}{Extended child care solution (adult)}
+mutex.wait()
+    adults++
+    if waiting:
+        n = min(3, waiting)
+        childQueue.signal(n)
+        waiting -= n
+        children += n
+mutex.signal()
+
+# critical section
+
+mutex.wait()
+    if children <= 3 * (adults-1):
+        adults--
+        mutex.signal()
+    else:
+        leaving++
+        mutex.signal()
+        adultQueue.wait() 
+\end{lstbox}
+
+As adults enter, they signal waiting children, if any.  Before they
+leave, they check whether there are enough adults left.  If so, they
+decrement {\tt adults} and exit.  Otherwise they increment {\tt
+leaving} and block.  While an adult thread is waiting to leave, it
+counts as one of the adults in the critical section, so additional
+children can enter.
+
+
+\newpage
+\section{The room party problem}
+
+I wrote this problem while I was at Colby College.  One semester
+there was a controversy over an allegation by a student that someone
+from the Dean of Students Office had searched his room in his
+absence.  Although the allegation was public, the Dean of Students
+wasn't able to comment on the case, so we never found out what
+really happened.  I wrote this problem to tease a friend of mine,
+who was the Dean of Student Housing.
+
+The following synchronization constraints apply to students
+and the Dean of Students:
+
+\begin{enumerate}
+
+\item Any number of students can be in a room at the same
+time.
+
+\item The Dean of Students can only enter a room if there
+are no students in the room (to conduct a search) or if
+there are more than 50 students in the room (to break up
+the party).
+
+\item While the Dean of Students is in the room, no additional
+students may enter, but students may leave.
+
+\item The Dean of Students may not leave the room until all
+students have left.
+
+\item There is only one Dean of Students, so you do not have
+to enforce exclusion among multiple deans.
+
+\end{enumerate}
+
+\begin{puzzlebox}{Puzzle}
+Write synchronization code for students and for the
+Dean of Students that enforces all of these constraints.
+
+
+%% \clearemptydoublepage
+%%% \subsec {Room party hint}
+\tcbsubtitle{Hint}
+
+\begin{lstbox}{Room party hint}
+students = 0                
+dean = 'not here'           
+mutex = Semaphore(1)
+turn = Semaphore(1)
+clear = Semaphore(0)
+lieIn = Semaphore(0)
+\end{lstbox}
+
+{\tt students} counts the number of students in the room,
+and {\tt dean} is the state of the Dean, which can also be
+``waiting'' or ``in the room''.
+{\tt mutex} protects {\tt students} and {\tt dean}, so this
+is yet another example of a scoreboard.
+
+{\tt turn} is a turnstile that keeps students from entering
+while the Dean is in the room.
+
+{\tt clear} and {\tt lieIn} are used as rendezvouses between
+a student and the Dean (which is a whole other kind of scandal!).
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec {Room party solution}
+\sub{Room party solution}
+
+This problem is hard.  I worked through a lot of versions before
+I got to this one.  The version that appeared in the first edition
+was mostly correct, but occasionally the Dean would enter the
+room and then find that he could neither search nor break up the
+party, so he would have to skulk off in embarrassed silence.
+
+Matt Tesch wrote a solution that spared this humiliation, but the
+result was complicated enough that we had a hard time convincing
+ourselves that it was correct.  But that solution led me to this one,
+which is a bit more readable.
+
+\begin{lstbox}{Room party solution (dean)}
+mutex.wait()
+    if students > 0 and students < 50:
+        dean = 'waiting'
+	mutex.signal()
+	lieIn.wait()     # and get mutex from the student.
+
+    # students must be 0 or >= 50     (*\label{roomparty1}*)
+
+    if students >= 50:
+        dean = 'in the room'
+        breakup()
+	turn.wait()      # lock the turnstile
+        mutex.signal()
+	clear.wait()     # and get mutex from the student.
+	turn.signal()    # unlock the turnstile
+
+    else:                # students must be 0
+        search()
+
+dean = 'not here'
+mutex.signal() 
+\end{lstbox}
+
+When the Dean arrives, there are three cases: if there are students in
+the room, but not 50 or more, the Dean has to wait.  If there are 50
+or more, the Dean breaks up the party and waits for the students to
+leave.  If there are no students, the Dean searches and leaves.
+
+In the first two cases, the Dean has to wait for a rendezvous with a
+student, so he has to give up {\tt mutex} to avoid a deadlock.  When
+the Dean wakes up, he has to modify the scoreboard, so he needs to get
+the mutex back.  This is similar to the situation we saw in the Sushi
+Bar problem.  The solution I chose is the ``Pass the baton'' pattern.
+
+%% \newpage
+\begin{lstbox}{Room party solution (student)}
+mutex.wait()
+    if dean == 'in the room':
+        mutex.signal()
+        turn.wait()
+        turn.signal()
+        mutex.wait()
+
+    students += 1
+
+    if students == 50 and dean == 'waiting':
+        lieIn.signal()             # and pass mutex to the dean
+    else:
+        mutex.signal()
+
+party()
+
+mutex.wait()
+    students -= 1
+
+    if students == 0 and dean == 'waiting':
+        lieIn.signal()         # and pass mutex to the dean
+    elif students == 0 and dean == 'in the room':
+        clear.signal()         # and pass mutex to the dean
+    else:
+        mutex.signal()
+\end{lstbox}
+
+There are three cases where a student might have to signal the Dean.
+If the Dean is waiting, then the 50th student in or the last one out
+has to signal {\tt lieIn}.  If the Dean is in the room (waiting for
+all the students to leave), the last student out signals {\tt clear}.
+In all three cases, it is understood that the mutex passes from the
+student to the Dean.
+
+One part of this solution that may not be obvious is how we know at
+Line~\ref{roomparty1} of the Dean's code that {\tt students} must be 0
+or not less than 50.  The key is to realize that there are only two
+ways to get to this point: either the first conditional was false,
+which means that {\tt students} is either 0 or not less than 50; or
+the Dean was waiting on {\tt lieIn} when a student signaled, which
+means, again, that {\tt students} is either 0 or not less than 50.
+
+
+%% \clearemptydoublepage
+\blankpage
+\section{The Senate Bus problem}
+
+This problem was originally based on the Senate bus at Wellesley
+College.  Riders come to a bus stop and wait for a bus.  When the bus
+arrives, all the waiting riders invoke {\tt boardBus}, but anyone who
+arrives while the bus is boarding has to wait for the next bus.  The
+capacity of the bus is 50 people; if there are more than 50 people
+waiting, some will have to wait for the next bus.
+
+When all the waiting riders have boarded,
+the bus can invoke {\tt depart}.  If the bus arrives when there
+are no riders, it should depart immediately.
+
+\begin{puzzlebox}{Puzzle}
+Write synchronization code that enforces all of these
+constraints.
+
+
+%% \clearemptydoublepage
+%%% \subsec {Bus problem hint}
+\tcbsubtitle{Bus problem hint}
+
+Here are the variables I used in my solution:
+
+\begin{lstbox}{Bus problem hint}
+riders = 0
+mutex = Semaphore(1)
+multiplex = Semaphore(50)
+bus = Semaphore(0)
+allAboard = Semaphore(0)
+\end{lstbox}
+
+{\tt mutex} protects {\tt riders}, which keeps track of
+how many riders are waiting;
+{\tt multiplex} makes sure there are no more than 50 riders
+in the boarding area.
+
+Riders wait on
+{\tt bus}, which gets signaled when the bus arrives.  The
+bus waits on {\tt allAboard}, which gets signaled by the last
+student to board.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec {Bus problem solution \#1}
+\sub{Bus problem solution \#1}
+
+Here is the code for the bus.  Again, we are using the
+``Pass the baton'' pattern.
+
+\begin{lstbox}{Bus problem solution (bus)}
+mutex.wait()
+if riders > 0:
+    bus.signal()        # and pass the mutex
+    allAboard.wait()    # and get the mutex back
+mutex.signal()
+
+depart()
+\end{lstbox}
+
+When the bus arrives, it gets {\tt mutex}, which
+prevents late arrivals from entering the boarding area.  If there
+are no riders, it departs immediately.  Otherwise, it signals {\tt bus}
+and waits for the riders to board.
+
+Here is the code for the riders:
+
+\begin{lstbox}{Bus problem solution (riders)}
+multiplex.wait()
+    mutex.wait()
+        riders += 1
+    mutex.signal()
+
+    bus.wait()              # and get the mutex
+multiplex.signal()
+
+boardBus()
+
+riders -= 1
+if riders == 0:
+    allAboard.signal() 
+else:
+    bus.signal()            # and pass the mutex
+\end{lstbox}
+
+The multiplex controls the number of riders in the waiting area,
+although strictly speaking, a rider doesn't enter the waiting
+area until she increments {\tt riders}.
+
+Riders wait on {\tt bus} until the bus arrives.  When a rider
+wakes up, it is understood that she has the mutex.
+After boarding, each rider decrements {\tt riders}.  If there
+are more riders waiting, the boarding rider signals {\tt bus}
+and pass the mutex to the next rider.  The last rider signals
+{\tt allAboard} and passes the mutex back to the bus.
+
+Finally, the bus releases the mutex and departs.
+
+\begin{puzzlebox}{Puzzle}
+Can you find a solution to this problem using the
+``I'll do it for you'' pattern?
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec {Bus problem solution \#2}
+\sub{Bus problem solution \#2}
+
+Grant Hutchins came up with this solution, which uses fewer
+variables than the previous one, and doesn't involve passing
+around any mutexes.  Here are the variables:
+
+\begin{lstbox}{Bus problem solution \#2 (initialization)}
+waiting = 0
+mutex = new Semaphore(1)
+bus = new Semaphore(0)
+boarded = new Semaphore(0)
+\end{lstbox}
+
+{\tt waiting} is the number of riders in the boarding area,
+which is protected by {\tt mutex}.  {\tt bus} signals when the
+bus has arrived; {\tt boarded} signals that a rider has boarded.
+
+Here is the code for the bus.
+
+\begin{lstbox}{Bus problem solution (bus)}
+mutex.wait()
+n = min(waiting, 50)
+for i in range(n):
+    bus.signal()
+    boarded.wait()
+
+waiting = max(waiting-50, 0)
+mutex.signal()
+
+depart()
+\end{lstbox}
+
+The bus gets the {\tt mutex} and holds it throughout the boarding
+process.  The loop signals each rider in turn and waits for her to
+board.  By controlling the number of signals, the bus prevents
+more than 50 riders from boarding.
+
+When all the riders have boarded, the bus updates {\tt
+waiting}, which is an example of the ``I'll do it for you'' pattern.
+
+The code for the riders uses two
+simple patterns: a mutex and a rendezvous.
+
+\begin{lstbox}{Bus problem solution (riders)}
+mutex.wait()
+     waiting += 1
+mutex.signal()
+
+bus.wait()
+board()
+boarded.signal()
+\end{lstbox}
+
+\vspace{1em}
+Challenge: if riders arrive while the bus is boarding, they
+might be annoyed if you make them wait for the next one.  Can you
+find a solution that allows late arrivals to board without violating
+the other constraints?
+
+
+%% \clearemptydoublepage
+\blankpage
+\section{The Faneuil Hall problem}
+
+This problem was written by Grant Hutchins, who was inspired
+by a friend who took her
+Oath of Citizenship at Faneuil Hall in Boston.
+
+\begin{quote}
+There are three kinds of threads: immigrants, spectators, and a one
+judge.  Immigrants must wait in line, check in, and then sit down.  At
+some point, the judge enters the building.  When the judge is in the
+building, no one may enter, and the immigrants may not leave.
+Spectators may leave.  Once all immigrants check in, the judge can
+confirm the naturalization.  After the confirmation, the immigrants
+pick up their certificates of U.S. Citizenship.  The judge leaves at
+some point after the confirmation.  Spectators may now enter as
+before.  After immigrants get their certificates, they may leave.
+\end{quote}
+
+\begin{puzzlebox}{Puzzle}
+To make these requirements more specific, let's give the threads
+some functions to execute, and put constraints on those functions.
+
+\begin{itemize}
+\item Immigrants must invoke {\tt enter}, {\tt checkIn}, {\tt sitDown},
+{\tt swear}, {\tt getCertificate} and {\tt leave}.
+\item The judge invokes {\tt enter}, {\tt confirm} and {\tt leave}.
+\item Spectators invoke {\tt enter}, {\tt spectate} and {\tt leave}.
+\item While the judge is in the building, no one may {\tt enter}
+and immigrants may not {\tt leave}.
+\item The judge can not {\tt confirm} until all immigrants who have
+invoked {\tt enter} have also invoked {\tt checkIn}.
+\item Immigrants can not {\tt getCertificate} until the judge
+has executed {\tt confirm}.
+\end{itemize}
+
+%% \clearemptydoublepage
+%%% \subsec {Faneuil Hall Problem Hint}
+\tcbsubtitle{Hint}
+
+\begin{lstbox}{Faneuil Hall problem hint}
+noJudge = Semaphore(1)
+entered = 0
+checked = 0
+mutex = Semaphore(1)
+confirmed = Semaphore(0)
+\end{lstbox}
+
+{\tt noJudge} acts as a turnstile for incoming immigrants and
+spectators; it also protects {\tt entered}, which counts the
+number of immigrants in the room.  {\tt checked} counts the
+number of immigrants who have checked in; it is protected by
+{\tt mutex}.
+
+{\tt confirmed} signals that the judge has executed {\tt confirm}.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec {Faneuil Hall problem solution}
+\sub{Faneuil Hall problem solution}
+
+Here is the code for immigrants:
+
+\begin{lstbox}{Faneuil Hall problem solution (immigrant)}
+noJudge.wait()
+enter()
+entered++
+noJudge.signal()
+
+mutex.wait()
+checkIn()
+checked++
+
+if judge = 1 and entered == checked:
+    allSignedIn.signal()              # and pass the mutex
+else:
+    mutex.signal()
+
+sitDown()
+confirmed.wait()
+
+swear()
+getCertificate()
+
+noJudge.wait()
+leave()
+noJudge.signal()
+\end{lstbox}
+
+Immigrants pass through a turnstile when they enter; while the
+judge is in the room, the turnstile is locked.
+
+After entering, immigrants have to get {\tt mutex} to check 
+in and update {\tt checked}.  If there is a judge waiting, the
+last immigrant to check in signals {\tt allSignedIn} and passes
+the mutex to the judge.
+
+Here is the code for the judge:
+
+\begin{lstbox}{Faneuil Hall problem solution (judge)}
+noJudge.wait()
+mutex.wait()
+
+enter()
+judge = 1
+
+if entered > checked:
+    mutex.signal()
+    allSignedIn.wait()               # and get the mutex back.
+
+confirm()
+confirmed.signal(checked)
+entered = checked = 0
+
+leave()
+judge = 0
+
+mutex.signal()
+noJudge.signal()
+\end{lstbox}
+
+The judge holds {\tt noJudge} to bar immigrants and spectators
+from entering, and {\tt mutex} so he can access {\tt entered}
+and {\tt checked}.
+
+If the judge arrives at an instant when everyone who has
+entered has also checked in, she can proceed immediately.  Otherwise,
+she has to give up the mutex and wait.  When the last immigrant
+checks in and signals {\tt allSignedIn}, it is understood that the
+judge will get the mutex back.
+
+After invoking {\tt confirm}, the judge signals {\tt confirmed}
+once for every immigrant who has checked in, and then resets
+the counters (an example of ``I'll do it for you'').
+Then the judge leaves and releases {\tt mutex} and {\tt noJudge}.
+
+After the judge signals {\tt confirmed}, immigrants invoke
+{\tt swear} and {\tt getCertificate} concurrently, and then
+wait for the {\tt noJudge} turnstile to open before leaving.
+
+The code for spectators is easy; the only constraint they have
+to obey is the {\tt noJudge} turnstile.
+
+\begin{lstbox}{Faneuil Hall problem solution (spectator)}
+noJudge.wait()
+enter()
+noJudge.signal()
+
+spectate()
+
+leave()
+\end{lstbox}
+
+Note: in this solution it is possible for immigrants to get stuck,
+after they get their certificate, by another judge coming to swear
+in the next batch of immigrants.  If that happens, they might have
+to wait through another swearing in-ceremony.
+
+\newpage
+\subsec{Extended Faneuil Hall Problem}
+\begin{puzzlebox}{Puzzle}
+Modify this solution to handle the additional constraint
+that after the judge leaves, all immigrants who have been sworn
+in must leave before the judge can enter again.
+
+
+%% \clearemptydoublepage
+%% \subsec {Extended Faneuil Hall Problem Hint}
+\tcbsubtitle{Hint}
+
+My solution uses the following additional variables:
+
+\begin{lstbox}{Faneuil Hall problem hint}
+exit = Semaphore(0)
+allGone = Semaphore(0)
+\end{lstbox}
+
+Since the extended problem involves an additional rendezvous,
+we can solve it with two semaphores.
+
+One other hint: I found it useful to use the ``pass the baton''
+pattern again.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%% \subsec {Extended Faneuil Hall problem solution}
+\sub{Extended Faneuil Hall problem solution}
+
+The top half of this solution is the same as before.  The
+difference starts at Line~\ref{fanexit}.  Immigrants wait
+here for the judge to leave.
+
+\begin{lstbox}{Faneuil Hall problem solution (immigrant)}
+noJudge.wait()
+enter()
+entered++
+noJudge.signal()
+
+mutex.wait()
+checkIn()
+checked++
+
+if judge = 1 and entered == checked:
+    allSignedIn.signal()              # and pass the mutex
+else:
+    mutex.signal()
+
+sitDown()
+confirmed.wait()
+
+swear()
+getCertificate()
+
+exit.wait()                          # and get the mutex(*\label{fanexit}*)
+leave()
+checked--
+if checked == 0:
+    allGone.signal()                 # and pass the mutex
+else:
+    exit.signal()                    # and pass the mutex
+\end{lstbox}
+
+For the judge, the difference starts at Line~\ref{fanjudge}.
+When the judge is ready to leave, she can't release {\tt noJudge},
+because that would allow more immigrants, and possibly another
+judge, to enter.  Instead, she signals {\tt exit}, which allows
+one immigrant to leave, and passes {\tt mutex}.
+
+The immigrant that gets the signal decrements {\tt checked} and
+then passes the baton to the next immigrant.  The last immigrant
+to leave signals {\tt allGone} and passes the mutex back to the
+judge.  This pass-back is not strictly necessary, but it has
+the nice feature that the judge releases both {\tt mutex}
+and {\tt noJudge} to end the phase cleanly.
+
+\newpage
+\begin{lstbox}{Faneuil Hall problem solution (judge)}
+noJudge.wait()
+mutex.wait()
+
+enter()
+judge = 1
+
+if entered > checked:
+    mutex.signal()
+    allSignedIn.wait()               # and get the mutex back.
+
+confirm()
+confirmed.signal(checked)
+entered = 0
+
+leave()
+judge = 0
+
+exit.signal()                       # and pass the mutex(*\label{fanjudge}*)
+allGone.wait()                      # and get it back
+mutex.signal()
+noJudge.signal()
+\end{lstbox}
+
+The spectator code for the extended problem is unchanged.
+
+
+%% \clearemptydoublepage
+\blankpage
+\section{Dining Hall problem}
+
+This problem was written by Jon Pollack during my Synchronization
+class at Olin College.  
+
+Students in the dining hall invoke {\tt dine} and then {\tt leave}.
+After invoking {\tt dine} and before invoking {\tt leave} a student is
+considered ``ready to leave''.
+
+The synchronization constraint that applies to students is that, in
+order to maintain the illusion of social suave, a student may never
+sit at a table alone.  A student is considered to be sitting alone
+if everyone else who has invoked {\tt dine} invokes {\tt leave}
+before she has finished {\tt dine}.
+
+\begin{puzzlebox}{Puzzle}
+Write code that enforces this constraint.
+
+
+%% \clearemptydoublepage
+%%% \subsec {Dining Hall problem hint}
+\tcbsubtitle{Dining Hall problem hint}
+
+\begin{lstbox}{Dining Hall problem hint}
+eating = 0
+readyToLeave = 0
+mutex = Semaphore(1)
+okToLeave = Semaphore(0)
+\end{lstbox}
+
+{\tt eating} and {\tt readyToLeave} are
+counters protected by {\tt mutex}, so this is the usual
+scoreboard pattern.
+
+If a student is ready to leave, but another student would be
+left alone at the table, she waits on
+{\tt okToLeave} until another student changes
+the situation and signals.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec {Dining Hall problem solution}
+\sub{Dining Hall problem solution}
+
+If you analyze the constraints, you will realize that there
+is only one situation where a student has to wait, if there is
+one student eating and one student who wants to leave.  But
+there are two ways to get out of this situation: another
+student might arrive to eat, or the dining student might 
+finish.
+
+In either case, the student who signals the waiting student
+updates the counters, so the waiting student doesn't have
+to get the mutex back.  This is another example of the
+the ``I'll do it for you'' pattern.
+
+\begin{lstbox}{Dining Hall problem solution}
+getFood()
+
+mutex.wait()
+eating++
+if eating == 2 and readyToLeave == 1:
+    okToLeave.signal()
+    readyToLeave--
+mutex.signal()
+
+dine()
+
+mutex.wait()
+eating--
+readyToLeave++
+
+if eating == 1 and readyToLeave == 1:
+    mutex.signal()
+    okToLeave.wait()
+elif eating == 0 and readyToLeave == 2:
+    okToLeave.signal()
+    readyToLeave -= 2
+    mutex.signal()
+else:
+    readyToLeave--
+    mutex.signal()
+
+leave()
+\end{lstbox}
+
+When is student is checking in, if she sees one student
+eating and one waiting to leave, she lets the waiter off the
+hook and decrements {\tt readyToLeave} for him.
+
+%% \newpage
+After dining, the student checks three cases:
+
+\begin{itemize}
+
+\item If there is only one student left eating, the departing student
+has to give up the mutex and wait.
+
+\item If the departing student finds that someone is waiting for
+her, she signals him and updates the counter for both of them.
+
+\item Otherwise, she just decrements {\tt readyToLeave} and leaves.
+
+\end{itemize}
+
+
+\newpage
+\subsec{Extended Dining Hall problem}
+
+The Dining Hall problem gets a little more challenging if we
+add another step.  As students come to lunch they
+invoke {\tt getFood}, {\tt dine} and then {\tt leave}.
+After invoking {\tt getFood} and before invoking {\tt dine},
+a student is considered ``ready to eat''.  Similarly, after
+invoking {\tt dine} a student is considered ``ready to leave''.
+
+The same synchronization constraint applies: a student may never sit
+at a table alone.  A student is considered to be sitting alone if
+either
+
+\begin{itemize}
+
+\item She invokes {\tt dine} while there is no one else at the table
+and no one ready to eat, or
+
+\item everyone else who has invoked {\tt dine} invokes {\tt leave}
+before she has finished {\tt dine}.
+
+\end{itemize}
+
+\begin{puzzlebox}{Puzzle}
+Write code that enforces these constraints.
+
+
+%% \clearemptydoublepage
+%%% \subsec {Extended Dining Hall problem hint}
+\tcbsubtitle{Hint}
+
+Here are the variables I used in my solution:
+
+\begin{lstbox}{Extended Dining Hall problem hint}
+readyToEat = 0
+eating = 0
+readyToLeave = 0
+mutex = Semaphore(1)
+okToSit = Semaphore(0)
+okToLeave = Semaphore(0)
+\end{lstbox}
+
+{\tt readyToEat}, {\tt eating} and {\tt readyToLeave} are
+counters, all protected by {\tt mutex}.
+
+If a student is in a situation where she cannot proceed, she
+waits on
+{\tt okToSit} or {\tt okToLeave} until another student changes
+the situation and signals.
+
+I also used a per-thread variable named {\tt hasMutex} to help
+keep track of whether or not a thread holds the mutex.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec {Extended Dining Hall problem solution}
+\sub{Extended Dining Hall problem solution}
+
+Again, if we analyze the constraints, we realize that there is
+only one situation where a student who is ready to eat has
+to wait, if there is no one eating and no one else ready to
+eat.  And the only way out is if someone else arrives who
+is ready to eat.
+
+\begin{lstbox}{Extended Dining Hall problem solution}
+getFood()
+
+mutex.wait()
+readyToEat++
+if eating == 0 and readyToEat == 1:
+    mutex.signal()
+    okToSit.wait()
+elif eating == 0 and readyToEat == 2:
+    okToSit.signal()
+    readyToEat -= 2
+    eating += 2
+    mutex.signal()
+else:
+    readyToEat--
+    eating++
+    if eating == 2 and readyToLeave == 1:
+        okToLeave.signal()
+        readyToLeave--
+    mutex.signal()
+
+dine()
+
+mutex.wait()
+eating--
+readyToLeave++
+if eating == 1 and readyToLeave == 1:
+    mutex.signal()
+    okToLeave.wait()
+elif eating == 0 and readyToLeave == 2:
+    okToLeave.signal()
+    readyToLeave -= 2
+    mutex.signal()
+else:
+    readyToLeave--
+    mutex.signal()
+
+leave()
+\end{lstbox}
+
+As in the previous solution, I used the ``I'll do it for you''
+pattern so that a waiting student doesn't have to get the mutex
+back.
+
+The primary difference between this solution and the previous
+one is that the first student who arrives at an empty table
+has to wait, and the second student allows both students to
+proceed.  It either case, we don't have to check for students
+waiting to leave, since no one can leave an empty table!
+
+
+
+%\clearemptydoublepage
+%\section{Party problem}
+
+%Description
+
+%\clearemptydoublepage
+%\subsec {Party problem hint}
+
+%\begin{lstlisting}[title={Party problem hint}]{}
+%\end{lstlisting}
+
+%\clearemptydoublepage
+%\subsec {Party problem solution}
+
+%\begin{lstlisting}[title={Party problem solution}]{}
+%\end{lstlisting}
+

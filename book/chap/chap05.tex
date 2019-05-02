@@ -1,0 +1,1037 @@
+\section{The dining savages problem}
+
+This problem is from Andrews's 
+{\em Concurrent Programming} \cite{andrews}.
+
+\begin {quotation}
+A tribe of savages eats communal dinners from a large pot that can
+hold M servings of stewed missionary\footnote{This problem is based on
+a cartoonish representation of the history of Western missionaries
+among hunter-gatherer societies.  Some humor is intended by the
+allusion to the Dining Philosophers problem, but the representation of
+``savages'' here isn't intended to be any more realistic than the
+previous representation of philosophers.  If you are interested in
+hunter-gatherer societies, I recommend Jared Diamond's {\em Guns,
+Germs and Steel}, Napoleon Chagnon's {\em The Yanomamo}, and Redmond
+O'Hanlon's {\em In Trouble Again}, but not Tierney's {\em Darkness in
+El Dorado}, which I believe is unreliable.}.  When a savage wants to
+eat, he helps himself from the pot, unless it is empty.  If the pot is
+empty, the savage wakes up the cook and then waits until the cook has
+refilled the pot.
+\end{quotation}
+
+Any number of savage threads run the following code:
+
+\begin{lstbox}{Unsynchronized savage code}
+while True:
+    getServingFromPot()
+    eat()
+\end{lstbox}
+
+And one cook thread runs this code:
+
+\begin{lstbox}{Unsynchronized cook code}
+while True:
+    putServingsInPot(M)
+\end{lstbox}
+
+The synchronization constraints are:
+
+\begin{itemize}
+
+\item Savages cannot invoke {\tt getServingFromPot} if the
+pot is empty.
+
+\item The cook can invoke {\tt putServingsInPot} only if
+the pot is empty.
+
+\end{itemize}
+
+\begin{puzzlebox}{Puzzle}
+Add code for the savages and the cook that
+satisfies the synchronization constraints.
+
+
+%% \clearemptydoublepage
+%%% \subsec{Dining Savages hint}
+\tcbsubtitle{Hint}
+
+It is tempting to use a semaphore to keep track of the number of
+servings, as in the producer-consumer problem.  But in order to signal
+the cook when the pot is empty, a thread would have to know before
+decrementing the semaphore whether it would have to wait, and we just
+can't do that.
+
+An alternative is to use a scoreboard to
+keep track of the number of servings.  If a savage finds
+the counter at zero, he wakes the cook and waits for a signal
+that the pot is full.  Here are the variables I used:
+
+\begin{lstbox}{Dining Savages hint}
+servings = 0
+mutex = Semaphore(1)
+emptyPot = Semaphore(0)
+fullPot = Semaphore(0)
+\end{lstbox}
+
+Not surprisingly, {\tt emptyPot} indicates that the pot is empty and
+{\tt fullPot} indicates that the pot is full.
+\end{puzzlebox}
+
+%% \clearemptydoublepage
+%%% \subsec{Dining Savages solution}
+\sub{Dining Savages solution}
+
+My solution is a combination of the scoreboard pattern
+with a rendezvous.
+Here is the code for the cook:
+
+\begin{lstbox}{Dining Savages solution (cook)}
+while True:
+    emptyPot.wait()
+    putServingsInPot(M)
+    fullPot.signal()
+\end{lstbox}
+
+The code for the savages is only a little more complicated.
+As each savage passes through the mutex, he checks the pot.
+If it is empty, he signals the cook and waits.  Otherwise,
+he decrements {\tt servings} and gets a serving from the pot.
+
+\begin{lstbox}{Dining Savages solution (savage)}
+while True:
+    mutex.wait()
+        if servings == 0:
+            emptyPot.signal()
+            fullPot.wait()
+            servings = M
+        servings -= 1
+	getServingFromPot()
+    mutex.signal()
+
+    eat()
+\end{lstbox}
+
+It might seem odd that the savage, rather than the cook, sets
+{\tt servings = M}.  That's not really necessary; when the cook
+runs {\tt putServingsInPot}, we know that the savage that holds
+the mutex is waiting on {\tt fullPot}.  So the cook could
+access {\tt servings} safely.  But in this case, I decided to
+let the savage do it so that it is clear from looking at the
+code that all accesses to {\tt servings} are inside the mutex.
+
+This solution is deadlock-free.  The only opportunity for
+deadlock comes when the savage that holds {\tt mutex} waits
+for {\tt fullPot}.  While he is waiting, other savages are
+queued on {\tt mutex}.  But eventually the cook will run and
+signal {\tt fullPot}, which allows the waiting savage
+to resume and release the mutex.
+
+Does this solution assume that the pot is thread-safe, or does it
+guarantee that {\tt putServingsInPot} and {\tt getServingFromPot}
+are executed exclusively?
+
+
+%% \clearemptydoublepage
+\blankpage
+\section{The barbershop problem}
+
+The original barbershop problem was proposed by
+Dijkstra.  A variation of it appears in 
+Silberschatz and Galvin's {\em Operating Systems Concepts}
+\cite{silberschatz}.
+
+\begin {quotation}
+A barbershop consists of a waiting room with $n$ chairs, and the
+barber room containing the barber chair.  If there are no customers to
+be served, the barber goes to sleep.  If a customer enters the
+barbershop and all chairs are occupied, then the customer leaves the
+shop.  If the barber is busy, but chairs are available, then the
+customer sits in one of the free chairs.  If the barber is asleep, the
+customer wakes up the barber.  Write a program to coordinate the
+barber and the customers.
+\end{quotation}
+
+To make the problem a little more concrete, I added the
+following information:
+
+\begin{itemize}
+
+\item Customer threads should invoke a function named {\tt getHairCut}.
+
+\item If a customer thread arrives when the shop is full, 
+it can invoke {\tt balk}, which does not return.
+
+\item The barber thread should invoke {\tt cutHair}.
+
+\item When the barber invokes {\tt cutHair} there should
+be exactly one thread invoking {\tt getHairCut} concurrently.
+
+\end{itemize}
+
+\begin{puzzlebox}{Puzzle}
+Write a solution that guarantees these constraints.
+
+
+%% \clearemptydoublepage
+%%% \subsec{Barbershop hint}
+\tcbsubtitle{Hint}
+
+\lstinputbox{Barbershop hint}{../code/barber.py.0}
+
+
+{\tt n} is the total number of customers that can be in the shop:
+three in the waiting room and one in the chair.
+
+{\tt customers} counts the number of customers in the shop;
+it is protected by {\tt mutex}.
+
+The barber waits on {\tt customer} until a customer enters the
+shop, then the customer waits on {\tt barber} until the barber
+signals him to take a seat.
+
+After the haircut, the customer signals {\tt customerDone} and
+waits on {\tt barberDone}.
+\end{puzzlebox}
+
+%% \clearemptydoublepage
+%%% \subsec{Barbershop solution}
+\sub{Barbershop solution}
+
+This solution combines a scoreboard and two rendezvouses\footnote{The
+  plural of rendezvous is rare, and not all dictionaries agree about
+  what it is.  Another possibility is that the plural is also spelled
+  ``rendezvous,'' but the final ``s'' is pronounced.}.  Here is the
+code for customers:
+
+\lstinputbox{Barbershop solution (customer)}{../code/barber.py.1}
+
+If there are $n$ customers in the shop any customers that
+arrive immediately invoke {\tt balk}.
+Otherwise each customer signals {\tt customer} and waits on
+{\tt barber}.
+
+Here is the code for barbers:
+
+\lstinputbox{Barbershop solution (barber)}{../code/barber.py.2}
+
+Each time a customer signals,
+the barber wakes, signals {\tt barber}, and gives one
+hair cut.  If another customer arrives while the barber
+is busy, then on the next iteration the barber will pass
+the {\tt customer} semaphore without sleeping.
+
+The names for {\tt customer} and {\tt barber} are based on
+the naming convention for a rendezvous, so {\tt customer.wait()}
+means ``wait for a customer,'' not ``customers wait here.''
+
+The second rendezvous, using {\tt customerDone} and {\tt barberDone},
+ensures that the hair cut is done before the barber loops around to
+let the next customer into the critical section.
+
+This solution is in \verb"sync_code/barber.py" (see~\ref{sync.py}).
+
+
+%% \clearemptydoublepage
+\blankpage
+\section{The FIFO barbershop}
+
+In the previous solution there is no guarantee that customers are
+served in the order they arrive.  Up to {\tt n} customers can pass
+the turnstile, signal
+{\tt customer} and wait on {\tt barber}.  When the barber signal
+{\tt barber}, any of the customers might proceed.
+
+\begin{puzzlebox}{Puzzle}
+Modify this solution so that customers are served in the order they
+pass the turnstile.
+
+Hint: you can refer to the current thread as {\tt self}, so if you
+write {\tt self.sem = Semaphore(0)}, each thread gets its own
+semaphore.
+
+
+%% \clearemptydoublepage
+%%% \subsec{FIFO barbershop hint}
+\tcbsubtitle{Hint}
+
+My solution uses a list of semaphores named {\tt queue}.
+
+\lstinputbox{FIFO barbershop hint}{../code/barber2.py.0}
+
+As each thread passes the turnstile, it creates a thread and puts it
+in the queue.
+
+Instead of waiting on {\tt barber}, each thread waits on its own
+semaphore.  When the barber wakes up, he removes a thread from the queue and
+signals it.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec{FIFO barbershop solution}
+\sub{FIFO barbershop solution}
+
+Here is the modified code for customers:
+
+\lstinputbox{FIFO barbershop solution (customer)}{../code/barber2.py.1}
+
+And the code for barbers:
+
+\lstinputbox{FIFO barbershop solution (barber)}{../code/barber2.py.2}
+
+Notice that the barber has to get {\tt mutex} to access the
+queue.
+
+This solution is in \verb"sync_code/barber2.py" (see~\ref{sync.py}).
+
+
+%% \clearemptydoublepage
+\blankpage
+\section {Hilzer's Barbershop problem}
+
+William Stallings \cite{stallings} presents a more complicated version
+of the barbershop problem, which he attributes to Ralph Hilzer at the
+California State University at Chico.
+
+\begin{quotation}
+Our barbershop has three chairs, three barbers, and a waiting
+area that can accommodate four customers on a sofa and that has
+standing room for additional customers.  Fire codes limit the
+total number of customers in the shop to 20.
+
+A customer will not enter the shop if it is filled to capacity with
+other customers.  Once inside, the customer takes a seat on the sofa
+or stands if the sofa is filled.  When a barber is free, the customer
+that has been on the sofa the longest is served and, if there are any
+standing customers, the one that has been in the shop the longest
+takes a seat on the sofa.  When a customer's haircut is finished, any
+barber can accept payment, but because there is only one cash
+register, payment is accepted for one customer at a time.  The barbers
+divide their time among cutting hair, accepting payment, and sleeping
+in their chair waiting for a customer.
+\end{quotation}
+
+
+In other words, the following synchronization constraints apply:
+
+\begin{itemize}
+
+\item Customers invoke the following functions in order:
+{\tt enterShop}, {\tt sitOnSofa},
+{\tt getHairCut}, {\tt pay}.
+
+\item Barbers invoke {\tt cutHair} and {\tt acceptPayment}.
+
+\item Customers cannot invoke {\tt enterShop} if the shop
+is at capacity.
+
+\item If the sofa is full, an arriving customer cannot invoke 
+{\tt sitOnSofa}.
+
+\item When a customer invokes {\tt getHairCut} there should be
+a corresponding barber executing {\tt cutHair} concurrently,
+and vice versa.
+
+\item It should be possible for up to three customers to execute
+{\tt getHairCut} concurrently, and up to three barbers to execute
+{\tt cutHair} concurrently.
+
+\item The customer has to {\tt pay} before the barber can
+{\tt acceptPayment}.
+
+\item The barber must {\tt acceptPayment} before the customer can
+exit.
+
+\end{itemize}
+
+\begin{puzzlebox}{Puzzle}
+Write code that enforces the synchronization
+constraints for Hilzer's barbershop.
+
+
+%%% \subsec {Hilzer's barbershop hint}
+\tcbsubtitle{Hilzer's barbershop hint}
+
+Here are the variables I used in my solution:
+
+\lstinputbox{Hilzer's barbershop hint}{../code/barber3.py.0}
+
+{\tt mutex} protects {\tt customers}, which keeps track of the
+number of customers in the shop, and {\tt queue1} which is a list
+of semaphores for threads waiting for a seat on the sofa.
+
+{\tt mutex2} protects {\tt queue2}, which is a list
+of semaphores for threads waiting for a chair.
+
+{\tt sofa} is a multiplex that enforces the maximum number of customers
+on the sofa.
+
+{\tt customer1} signals that there is a customer in {\tt queue1}, and
+{\tt customer2} signals that there is a customer in {\tt queue2}.
+
+{\tt payment} signals that a customer has paid, and {\tt receipt}
+sigmals that a barber has accepted payment.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec {Hilzer's barbershop solution}
+\sub{Hilzer's barbershop solution}
+
+This solution is considerably more complex than I expected.  I
+am not if Hilzer had something simpler in mind, but here is the
+best I could do.
+
+\lstinputbox{Hilzer's barbershop solution (customer)}{../code/barber3.py.1}
+
+The first paragraph is the same as in the previous solution.  When
+a customer arrives, it checks the counter and either balks or adds
+itself to the queue.  Then it signals a barber.
+
+When the customer gets out of queue, it enters the multiplex,
+sits on the couch and adds itself to the second queue.
+
+When it gets out of {\em that} queue, it gets a haircut, pays,
+and then exits.
+
+\lstinputbox{Hilzer's barbershop solution (barber)}{../code/barber3.py.2}
+
+Each barber waits for a customer to enter, signals the customer's
+semaphore to get it out of queue, then waits for it to claim a seat
+on the sofa.  This enforces the FIFO requirement.
+
+The barber waits for the customer to join the second queue and then
+signals it, allowing the customer to claim a chair.
+
+Each barber admits one customer to the chair, so there can by up
+to three concurrent haircuts.  Because there is only one cash
+register, the customer has to get {\tt mutex}.  The customer
+and barber rendezvous at the cash register, then both exit.
+
+This solution satisfies the synchonization constraints, but it leaves
+the sofa underutilized.  Because there are only three barbers, there
+can never be more than three customers on the sofa, so the multiplex
+is unnecessary.
+
+This solution is in \verb"sync_code/barber3.py" (see~\ref{sync.py}).
+
+The only way I can think of to solve this problem is to create a third
+kind of thread, which I can an usher.  The ushers manage {\tt queue1}
+and the barbers manage {\tt queue2}.  If there are 4 ushers and 3 barbers,
+the sofa can be fully utilized.
+
+This solution is in \verb"sync_code/barber4.py" (see~\ref{sync.py}).
+
+
+%% \clearemptydoublepage
+\blankpage
+\section{The Santa Claus problem}
+
+This problem is from William Stallings's
+{\em Operating Systems} \cite{stallings},
+but he attributes it to John Trono of St. Michael's College in
+Vermont.
+
+\begin{quotation}
+Santa Claus sleeps in his shop at the North Pole and can only be
+awakened by either (1) all nine reindeer being back from their
+vacation in the South Pacific, or (2) some of the elves having
+difficulty making toys; to allow Santa to get some sleep, the elves
+can only wake him when three of them have problems.  When three elves
+are having their problems solved, any other elves wishing to visit
+Santa must wait for those elves to return.  If Santa wakes up to find
+three elves waiting at his shop's door, along with the last reindeer
+having come back from the tropics, Santa has decided that the elves can
+wait until after Christmas, because it is more important to get his
+sleigh ready.  (It is assumed that the reindeer do not want to leave
+the tropics, and therefore they stay there until the last possible
+moment.)  The last reindeer to arrive must get Santa while the others
+wait in a warming hut before being harnessed to the sleigh.
+\end{quotation}
+
+Here are some addition specifications:
+
+\begin {itemize}
+
+\item After the ninth reindeer arrives, Santa must invoke 
+{\tt prepareSleigh}, and then all nine reindeer must
+invoke {\tt getHitched}.
+
+\item After the third elf arrives, Santa must invoke {\tt helpElves}.
+Concurrently, all three elves should invoke {\tt getHelp}.
+
+\item All three elves must invoke {\tt getHelp} before any additional
+elves enter (increment the elf counter).
+
+\end {itemize}
+
+Santa should run in a loop so he can help many sets of elves.
+We can assume that there are exactly 9 reindeer, but there may
+be any number of elves.  
+
+\begin{puzzlebox}{Hint}
+%% \clearemptydoublepage
+%%% \subsec {Santa problem hint}
+
+\begin{lstbox}{Santa problem hint}
+elves = 0
+reindeer = 0
+santaSem = Semaphore(0)
+reindeerSem = Semaphore(0)
+elfTex = Semaphore(1)
+mutex = Semaphore(1)
+\end{lstbox}
+
+{\tt elves} and {\tt reindeer} are counters, both protected
+by {\tt mutex}.  Elves and reindeer get {\tt mutex} to modify the
+counters; Santa gets it to check them.
+
+Santa waits on {\tt santaSem} until either an elf or a reindeer
+signals him.
+
+The reindeer wait on {\tt reindeerSem} until Santa signals them to
+enter the paddock and get hitched.
+
+The elves use {\tt elfTex} to prevent additional elves from
+entering while three elves are being helped.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec {Santa problem solution}
+\sub{Santa problem solution}
+
+Santa's code is pretty straightforward.  Remember that it
+runs in a loop.
+
+\begin{lstbox}{Santa problem solution (Santa)}
+santaSem.wait()
+mutex.wait()
+    if reindeer >= 9:
+        prepareSleigh()
+	reindeerSem.signal(9)
+        reindeer -= 9
+    else if elves == 3:
+        helpElves()
+mutex.signal()
+\end{lstbox}
+
+When Santa wakes up, he checks which of the two conditions
+holds and either deals with the reindeer or the waiting elves.
+If there are nine reindeer waiting,
+Santa invokes {\tt prepareSleigh}, then signals {\tt reindeerSem}
+nine times, allowing the reindeer to invoke {\tt getHitched}.
+If there are elves waiting, Santa just
+invokes {\tt helpElves}.  There is no need for the elves to wait
+for Santa; once they signal {\tt santaSem}, they can
+invoke {\tt getHelp} immediately.
+
+Santa doesn't have to decrement
+the {\tt elves} counter because the elves do it on their way
+out.
+
+Here is the code for reindeer:
+
+\begin{lstbox}{Santa problem solution (reindeer)}
+mutex.wait()
+    reindeer += 1
+    if reindeer == 9:
+        santaSem.signal()
+mutex.signal()
+
+reindeerSem.wait()
+getHitched()
+\end{lstbox}
+
+The ninth reindeer signals Santa and then joins the other
+reindeer waiting on {\tt reindeerSem}.  When Santa signals, the
+reindeer all execute {\tt getHitched}.
+
+The elf code is similar, except that when the third elf arrives
+it has to bar subsequent arrivals until the first three have
+executed {\tt getHelp}.
+
+%% \newpage
+\begin{lstbox}{Santa problem solution (elves)}
+elfTex.wait()
+mutex.wait()
+    elves += 1
+    if elves == 3:
+        santaSem.signal()
+    else
+        elfTex.signal()
+mutex.signal()
+
+getHelp()
+
+mutex.wait()
+    elves -= 1
+    if elves == 0:
+       elfTex.signal()
+mutex.signal()
+\end{lstbox}
+
+The first two elves release {\tt elfTex} at the same time they release
+the {\tt mutex}, but the last elf holds {\tt elfTex}, barring other
+elves from entering until all three elves have invoked {\tt getHelp}.
+
+The last elf to leave releases {\tt elfTex}, allowing the
+next batch of elves to enter.
+
+\newpage
+\section{Building H$_2$O}
+\label{water}
+
+This problem has been a staple of the Operating Systems class
+at U.C. Berkeley for at least a decade.  It seems to be based on
+an exercise in Andrews's {\em Concurrent Programming} \cite{andrews}.
+
+There are two kinds of threads, oxygen and hydrogen.  In order
+to assemble these threads into water molecules, we have to
+create a barrier that makes each thread wait until a
+complete molecule is ready to proceed.
+
+As each thread passes the barrier, it should invoke
+{\tt bond}.  You must guarantee that all the threads
+from one molecule invoke {\tt bond} before any of the threads
+from the next molecule do.
+
+In other words:
+
+\begin{itemize}
+
+\item If an oxygen thread arrives at the barrier when no
+hydrogen threads are present, it has to wait for two
+hydrogen threads.
+
+\item If a hydrogen thread arrives at the barrier when
+no other threads are present, it has to wait for an
+oxygen thread and another hydrogen thread.
+
+\end{itemize}
+
+We don't have to worry about matching the threads up explicitly; that
+is, the threads do not necessarily know which other threads they are
+paired up with.  The key is just that threads pass the barrier in
+complete sets; thus, if we examine the sequence of threads that invoke
+{\tt bond} and divide them into groups of three, each group should
+contain one oxygen and two hydrogen threads.
+
+\begin{puzzlebox}{Puzzle}
+Write synchronization code for oxygen and hydrogen
+molecules that enforces these constraints.
+
+
+%% \clearemptydoublepage
+%%% \subsec {H$_2$O hint}
+\tcbsubtitle{Hint}
+
+Here are the variables I used in my solution:
+
+\begin{lstbox}{Water building hint}
+mutex = Semaphore(1)
+oxygen = 0
+hydrogen = 0
+barrier = Barrier(3)
+oxyQueue = Semaphore(0)
+hydroQueue = Semaphore(0)
+\end{lstbox}
+
+{\tt oxygen} and {\tt hydrogen} are counters, protected by {\tt mutex}.
+{\tt barrier} is where each set of three threads meets after
+invoking {\tt bond} and before allowing the next set of threads
+to proceed.
+
+{\tt oxyQueue} is the semaphore oxygen threads wait on;
+{\tt hydroQueue} is the semaphore hydrogen threads wait on.
+I am using the naming convention for queues, so
+{\tt oxyQueue.wait()} means ``join the oxygen queue'' and
+{\tt oxyQueue.signal()} means ``release an oxygen thread from
+the queue.''
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec {H$_2$O solution}
+\sub{H$_2$O solution}
+
+Initially {\tt hydroQueue} and {\tt oxyQueue} are locked.  When
+an oxygen thread arrives it signals {\tt hydroQueue} twice,
+allowing two hydrogens to proceed.  Then the oxygen thread waits
+for the hydrogen threads to arrive.
+
+\begin{lstbox}{Oxygen code}
+mutex.wait()
+oxygen += 1
+if hydrogen >= 2:
+    hydroQueue.signal(2)
+    hydrogen -= 2
+    oxyQueue.signal()
+    oxygen -= 1
+else:
+    mutex.signal()
+
+oxyQueue.wait()
+bond()
+
+barrier.wait()
+mutex.signal()
+\end{lstbox}
+
+As each oxygen thread enters, it gets the mutex and checks the scoreboard.
+If there are at least two hydrogen threads waiting, it signals two of
+them and itself and then bonds.  If not, it releases the mutex and
+waits.
+
+After bonding, threads wait at the barrier until all three threads
+have bonded, and then the oxygen thread releases the mutex.  Since
+there is only one oxygen thread in each set of three, we are guaranteed
+to signal {\tt mutex} once.
+
+The code for hydrogen is similar:
+
+\begin{lstbox}{Hydrogen code}
+mutex.wait()
+hydrogen += 1
+if hydrogen >= 2 and oxygen >= 1:
+    hydroQueue.signal(2)
+    hydrogen -= 2
+    oxyQueue.signal()
+    oxygen -= 1
+else:
+    mutex.signal()
+
+hydroQueue.wait()
+bond()
+
+barrier.wait()
+\end{lstbox}
+
+An unusual feature of this solution is that
+the exit point of the mutex is ambiguous.  In
+some cases, threads enter the mutex, update the counter, and exit the
+mutex.  But when a thread arrives that forms a complete set, it has to
+keep the mutex in order to bar subsequent threads until the current
+set have invoked {\tt bond}.
+
+After invoking {\tt bond}, the three threads wait at a barrier.
+When the barrier opens, we know that all three threads have invoked
+{\tt bond} and that one of them holds the mutex.  We don't know
+{\em which} thread holds the mutex, but it doesn't matter as long
+as only one of them releases it.  Since we know there is only one
+oxygen thread, we make it do the work.
+
+This might seem wrong, because until now it
+has generally been true that a thread has to hold a lock in
+order to release it.  But there is no rule that says that has
+to be true.  This is one of those cases where it can be misleading
+to think of a mutex as a token that threads acquire and release.
+
+
+\blankpage
+\section {River crossing problem}
+
+This is from a problem set written by Anthony Joseph
+at U.C. Berkeley, but I don't know if he is the original author.
+It is similar to the H$_2$O problem in the sense that it is
+a peculiar sort of barrier that only allows threads to pass
+in certain combinations.
+
+Somewhere near Redmond, Washington there is a rowboat that is used by
+both Linux hackers and Microsoft employees (serfs) to cross a river.  The
+ferry can hold exactly four people; it won't leave the shore with more
+or fewer.  To guarantee the safety of the passengers, it is not
+permissible to put one hacker in the boat with three serfs, or to
+put one serf with three hackers.  Any other combination is safe.
+
+As each thread boards the boat it should invoke a function
+called {\tt board}.  You must guarantee that all four threads
+from each boatload invoke {\tt board} before any of the threads
+from the next boatload do.
+
+After all four threads have invoked {\tt board}, exactly one of
+them should call a function named {\tt rowBoat}, indicating
+that that thread will take the oars.  It doesn't matter which thread
+calls the function, as long as one does.
+
+Don't worry about the direction of travel.  Assume we are
+only interested in traffic going in one of the directions.
+
+
+%% \clearemptydoublepage
+%% \subsec {River crossing hint}
+\begin{puzzlebox}{Hint}
+
+Here are the variables I used in my solution:
+
+\begin{lstbox}{River crossing hint}
+barrier = Barrier(4)
+mutex = Semaphore(1)
+hackers = 0
+serfs = 0
+hackerQueue = Semaphore(0)
+serfQueue = Semaphore(0)
+local isCaptain = False
+\end{lstbox}
+
+{\tt hackers} and {\tt serfs} count the number of hackers
+and serfs waiting to board.  Since they are both protected by
+{\tt mutex}, we can check the condition of both variables without
+worrying about an untimely update.  This is another example
+of a scoreboard.
+
+{\tt hackerQueue} and {\tt serfQueue} allow us to control the number
+of hackers and serfs that pass.  The barrier
+makes sure that all four threads have invoked
+{\tt board} before the captain invokes {\tt rowBoat}.
+
+{\tt isCaptain} is a local variable that
+indicates which thread should invoke {\tt row}.
+\end{puzzlebox}
+
+%% \clearemptydoublepage
+%% \subsec {River crossing solution}
+\sub{River crossing solution}
+
+The basic idea of this solution is that each arrival updates
+one of the counters and then checks whether it makes a
+full complement, either by being the fourth of its kind or
+by completing a mixed pair of pairs.
+
+I'll present the code for hackers; the serf code is
+symmetric (except, of course, that it is 1000 times bigger,
+full of bugs, and it contains an embedded web browser):
+
+\begin{lstbox}{River crossing solution}
+mutex.wait()
+    hackers += 1
+    if hackers == 4:
+        hackerQueue.signal(4)                
+	hackers = 0
+	isCaptain = True
+    elif hackers == 2 and serfs >= 2:
+        hackerQueue.signal(2)                
+        serfQueue.signal(2)                  
+	serfs -= 2
+	hackers = 0
+	isCaptain = True
+    else:
+        mutex.signal()      # captain keeps the mutex
+
+hackerQueue.wait()           
+
+board()
+barrier.wait()            
+
+if isCaptain:
+    rowBoat()
+    mutex.signal()          # captain releases the mutex
+\end{lstbox}
+
+As each thread files through the mutual exclusion section, it
+checks whether a complete crew is ready to board.  If so, it
+signals the appropriate threads, declares itself captain, and
+holds the mutex in order to bar additional threads until the
+boat has sailed.
+
+The barrier keeps track of how many threads have boarded.
+When the last thread arrives, all threads proceed.
+The captain invoked {\tt row} and then (finally) releases the mutex.
+
+
+%% \clearemptydoublepage
+\blankpage
+\section{The roller coaster problem}
+
+This problem is from Andrews's {\em Concurrent
+Programming} \cite{andrews}, but he attributes it to J. S. Herman's
+Master's thesis.
+
+\begin {quotation}
+Suppose there are $n$ passenger threads and a car thread.  The passengers
+repeatedly wait to take rides in the car, which can hold $C$ passengers,
+where $C<n$.  The car can go around the tracks only when it is full.
+\end{quotation}
+
+Here are some additional details:
+
+\begin{itemize}
+
+\item Passengers should invoke {\tt board} and {\tt unboard}.
+
+\item The car should invoke {\tt load}, {\tt run} and {\tt unload}.
+
+\item Passengers cannot board until the car has invoked {\tt load}
+
+\item The car cannot depart until $C$ passengers have boarded.
+
+\item Passengers cannot unboard until the car
+has invoked {\tt unload}.
+
+\end{itemize}
+
+\begin{puzzlebox}{Puzzle}
+Write code for the passengers and car that enforces these
+constraints.
+
+
+%% \clearemptydoublepage
+%%% \subsec{Roller Coaster hint}
+\tcbsubtitle{Hint}
+
+\begin{lstbox}{Roller Coaster hint}
+mutex = Semaphore(1)
+mutex2 = Semaphore(1)
+boarders = 0
+unboarders = 0
+boardQueue = Semaphore(0)
+unboardQueue = Semaphore(0)
+allAboard = Semaphore(0)
+allAshore = Semaphore(0)
+\end{lstbox}
+
+{\tt mutex} protects {\tt passengers}, which counts the number of
+passengers that have invoked {\tt boardCar}.  
+
+Passengers wait on {\tt boardQueue} before boarding and
+{\tt unboardQueue} before unboarding.  {\tt allAboard}
+indicates that the car is full.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec{Roller Coaster solution}
+\sub{Roller Coaster solution}
+
+Here is my code for the car thread:
+
+\begin{lstbox}{Roller Coaster solution (car)}
+load()
+boardQueue.signal(C)
+allAboard.wait()
+
+run()
+
+unload()
+unboardQueue.signal(C)
+allAshore.wait()
+\end{lstbox}
+
+When the car arrives, it signals $C$ passengers,
+then waits for the last one to signal {\tt allAboard}.
+After it departs, it allows $C$ passengers to disembark,
+then waits for {\tt allAshore}.
+
+\begin{lstbox}{Roller Coaster solution (passenger)}
+boardQueue.wait()
+board()
+
+mutex.wait()
+   boarders += 1
+   if boarders == C:
+       allAboard.signal()
+       boarders = 0
+mutex.signal()
+
+unboardQueue.wait()
+unboard()
+
+mutex2.wait()
+   unboarders += 1
+   if unboarders == C:
+       allAshore.signal()
+       unboarders = 0
+mutex2.signal()
+\end{lstbox}
+
+Passengers wait for the car before boarding, naturally, and wait for
+the car to stop before leaving.  The last passenger to board signals
+the car and resets the passenger counter.
+
+
+%% \clearemptydoublepage
+\blankpage
+\subsec{Multi-car Roller Coaster problem}
+
+This solution does not generalize to the case where there is more
+than one car.  In order to do that, we have to satisfy some additional
+constraints:
+
+\begin{itemize}
+
+\item Only one car can be boarding at a time.
+
+\item Multiple cars can be on the track concurrently.
+
+\item Since cars can't pass each other, they have to unload
+in the same order they boarded.
+
+\item All the threads from one carload must disembark before
+any of the threads from subsequent carloads.
+
+\end{itemize}
+
+\begin{puzzlebox}{Puzzle}
+Modify the previous solution to handle the additional constraints.
+You can assume that there are $m$ cars, and that
+each car has a local variable named {\tt i}
+that contains an identifier between 0 and $m-1$.
+
+
+%% \clearemptydoublepage
+%%% \subsec{Multi-car Roller Coaster hint}
+\tcbsubtitle{Hint}
+
+I used two lists of semaphores to keep the cars in order.  One
+represents the loading area and one represents the unloading area.
+Each list contains one semaphore for each car.
+At any time, only one semaphore in each
+list is unlocked, so that enforces the order threads can
+load and unload.
+Initially, only the semaphores for Car 0 are unlocked.
+As each car enters the
+loading (or unloading) it waits on its own semaphore; as it leaves it
+signals the next car in line.
+
+\begin{lstbox}{Multi-car Roller Coaster hint}
+loadingArea = [Semaphore(0) for i in range(m)]
+loadingArea[1].signal()
+unloadingArea = [Semaphore(0) for i in range(m)]
+unloadingArea[1].signal()
+\end{lstbox}
+
+The function {\tt next} computes the identifier of the next
+car in the sequence (wrapping around from $m-1$ to 0):
+
+\begin{lstbox}{Implementation of {\tt next}}
+def next(i):
+    return (i + 1) % m
+\end{lstbox}
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec{Multi-car Roller Coaster solution}
+\sub{Multi-car Roller Coaster solution}
+
+Here is the modified code for the cars:
+
+\begin{lstbox}{Multi-car Roller Coaster solution (car)}
+loadingArea[i].wait()
+load()
+boardQueue.signal(C)
+allAboard.wait()
+loadingArea[next(i)].signal()
+
+run()
+
+unloadingArea[i].wait()
+unload()
+unboardQueue.signal(C)
+allAshore.wait()
+unloadingArea[next(i)].signal()
+\end{lstbox}
+
+The code for the passengers is unchanged.
+

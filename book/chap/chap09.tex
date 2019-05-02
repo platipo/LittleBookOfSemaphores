@@ -1,0 +1,373 @@
+In this section we will write a multithreaded, synchronized
+program in C.  Appendix~\ref{ccleanup} provides some of the utility
+code I use to make the C code a little more palatable.  The
+examples in this section depend on that code.
+
+\section{Mutual exclusion}
+
+We'll start by defining a structure that contains shared
+variables:
+
+\begin{lstbox}{}
+typedef struct {
+  int counter;
+  int end;
+  int *array;
+} Shared;
+
+Shared *make_shared (int end)
+{
+  int i;
+  Shared *shared = check_malloc (sizeof (Shared));
+
+  shared->counter = 0;
+  shared->end = end;
+
+  shared->array = check_malloc (shared->end * sizeof(int));
+  for (i=0; i<shared->end; i++) {
+    shared->array[i] = 0;
+  }
+  return shared;
+}
+\end{lstbox}
+
+{\tt counter} is a shared variable that will be incremented by
+concurrent threads until it reaches {\tt end}.  We will use
+{\tt array} to check for synchronization errors by keeping track
+of the value of {\tt counter} after each increment.
+
+\subsec{Parent code}
+
+Here is the code the parent thread uses to create threads
+and wait for them to complete:
+
+\begin{lstbox}{}
+int main ()
+{
+  int i;
+  pthread_t child[NUM_CHILDREN];
+
+  Shared *shared = make_shared (100000);
+
+  for (i=0; i<NUM_CHILDREN; i++) {
+    child[i] = make_thread (entry, shared);
+  }
+
+  for (i=0; i<NUM_CHILDREN; i++) {
+    join_thread (child[i]);
+  }
+
+  check_array (shared);
+  return 0;
+}
+\end{lstbox}
+
+The first loop creates the child threads; the second loop waits
+for them to complete.  When the last child has finished, the parent
+invokes {\tt check\_array} to check for errors.
+{\tt make\_thread} and {\tt join\_thread} are defined in
+Appendix~\ref{ccleanup}.
+
+\subsec{Child code}
+
+Here is the code that is executed by each of the children:
+
+\begin{lstbox}{}
+void child_code (Shared *shared)
+{
+  while (1) {
+    if (shared->counter >= shared->end) {
+      return;
+    }
+    shared->array[shared->counter]++;
+    shared->counter++;
+  }
+}
+\end{lstbox}
+
+Each time through the loop, the child threads use {\tt counter}
+as an index into {\tt array} and increment the corresponding element.
+Then they increment {\tt counter} and check to see if they're done.
+
+\subsec{Synchronization errors}
+
+If everything works correctly, each element of the array should be
+incremented once.  So to check for errors, we can just count the
+number of elements that are not 1:
+
+\begin{lstbox}{}
+void check_array (Shared *shared)
+{
+  int i, errors=0;
+
+  for (i=0; i<shared->end; i++) {
+    if (shared->array[i] != 1) errors++;
+  }
+  printf ("%d errors.\n", errors);
+}
+\end{lstbox}
+
+You can download this program (including the cleanup code) from
+\url{greenteapress.com/semaphores/counter.c}
+
+If you compile and run the program, you should see output like this:
+
+\begin{verbatim}
+Starting child at counter 0
+10000
+20000
+30000
+40000
+50000
+60000
+70000
+80000
+90000
+Child done.
+Starting child at counter 100000
+Child done.
+Checking...
+0 errors.
+\end{verbatim}
+
+Of course, the interaction of the children depends on details
+of your operating system and also other programs running on your
+computer.  In the example shown here, one thread ran all the way
+from 0 to {\tt end} before the other thread got started, so it is
+not surprising that there were no synchronization errors.
+
+But as {\tt end} gets bigger, there are more context switches between
+the children.  On my system I start to see errors when
+{\tt end} is 100,000,000.
+
+Puzzle: use semaphores to enforce exclusive access to the shared
+variables and run the program again to confirm that there are
+no errors.
+
+%% \clearemptydoublepage
+\subsec{Mutual exclusion hint}
+
+Here is the version of {\tt Shared} I used in my solution:
+
+\begin{lstbox}{}
+typedef struct {
+  int counter;
+  int end;
+  int *array;
+  Semaphore *mutex;  (*\label{declaremutex}*)
+} Shared;
+
+Shared *make_shared (int end)
+{
+  int i;
+  Shared *shared = check_malloc (sizeof (Shared));
+
+  shared->counter = 0;
+  shared->end = end;
+
+  shared->array = check_malloc (shared->end * sizeof(int));
+  for (i=0; i<shared->end; i++) {
+    shared->array[i] = 0;
+  }
+  shared->mutex = make_semaphore(1);  (*\label{initmutex}*)
+  return shared;
+}
+\end{lstbox}
+
+Line~\ref{declaremutex} declares {\tt mutex} as a Semaphore;
+Line~\ref{initmutex} initializes the mutex with the value 1.
+
+
+%% \clearemptydoublepage
+\subsec{Mutual exclusion solution}
+
+Here is the synchronized version of the child code:
+
+\begin{lstbox}{}
+void child_code (Shared *shared)
+{
+  while (1) {
+    sem_wait(shared->mutex);
+    if (shared->counter >= shared->end) {
+      sem_signal(shared->mutex);
+      return;
+    }
+
+    shared->array[shared->counter]++;
+    shared->counter++;
+    sem_signal(shared->mutex);
+  }
+}
+\end{lstbox}
+
+There is nothing too surprising here; the only tricky thing
+is to remember to release the mutex before the {\tt return}
+statement.
+
+You can download this solution from 
+\url{greenteapress.com/semaphores/counter_mutex.c}
+
+
+%% \clearemptydoublepage
+\blankpage
+\section{Make your own semaphores}
+\label{makeyourown}
+
+The most commonly used synchronization tools for programs that use
+Pthreads are mutexes and condition variables, not semaphores.  For an
+explanation of these tools, I recommend Butenhof's {\em Programming
+with POSIX Threads} \cite{butenhof}.
+
+Puzzle: read about mutexes and condition variables, and then
+use them to write an implementation of semaphores.
+
+You might want to use the following utility code in your solutions.
+Here is my wrapper for Pthreads mutexes:
+
+\begin{lstbox}{}
+typedef pthread_mutex_t Mutex;
+
+Mutex *make_mutex ()
+{
+  Mutex *mutex = check_malloc (sizeof(Mutex));
+  int n = pthread_mutex_init (mutex, NULL);
+  if (n != 0) perror_exit ("make_lock failed"); 
+  return mutex;
+}
+
+void mutex_lock (Mutex *mutex)
+{
+  int n = pthread_mutex_lock (mutex);
+  if (n != 0) perror_exit ("lock failed");
+}
+
+void mutex_unlock (Mutex *mutex)
+{
+  int n = pthread_mutex_unlock (mutex);
+  if (n != 0) perror_exit ("unlock failed");
+}
+\end{lstbox}
+
+%% \newpage
+And my wrapper for Pthread condition variables:
+
+\begin{lstbox}{}
+typedef pthread_cond_t Cond;
+
+Cond *make_cond ()
+{
+  Cond *cond = check_malloc (sizeof(Cond)); 
+  int n = pthread_cond_init (cond, NULL);
+  if (n != 0) perror_exit ("make_cond failed");
+  return cond;
+}
+
+void cond_wait (Cond *cond, Mutex *mutex)
+{
+  int n = pthread_cond_wait (cond, mutex);
+  if (n != 0) perror_exit ("cond_wait failed");
+}
+
+void cond_signal (Cond *cond)
+{
+  int n = pthread_cond_signal (cond);
+  if (n != 0) perror_exit ("cond_signal failed");
+}
+\end{lstbox}
+
+
+
+%% \clearemptydoublepage
+\subsec{Semaphore implementation hint}
+
+Here is the structure definition I used for my semaphores:
+
+\begin{lstbox}{}
+typedef struct {
+  int value, wakeups;
+  Mutex *mutex;
+  Cond *cond;
+} Semaphore;
+\end{lstbox}
+
+{\tt value} is the value of the semaphore.  {\tt wakeups} counts
+the number of pending signals; that is, the number of threads
+that have been woken but have not yet resumed execution.  The reason
+for wakeups is to make sure that our semaphores have
+Property 3, described in Section~\ref{props}.
+
+{\tt mutex} provides exclusive access to {\tt value} and
+{\tt wakeups}; {\tt cond} is the condition variable threads
+wait on if they wait on the semaphore.
+
+Here is the initialization code for this structure:
+
+\begin{lstbox}{}
+Semaphore *make_semaphore (int value)
+{
+  Semaphore *semaphore = check_malloc (sizeof(Semaphore));
+  semaphore->value = value;
+  semaphore->wakeups = 0;
+  semaphore->mutex = make_mutex ();
+  semaphore->cond = make_cond ();
+  return semaphore;
+}
+\end{lstbox}
+
+
+%% \clearemptydoublepage
+\subsec{Semaphore implementation}
+
+Here is my implementation of semaphores using Pthread's mutexes
+and condition variables:
+
+\begin{lstbox}{}
+void sem_wait (Semaphore *semaphore)
+{
+  mutex_lock (semaphore->mutex);                 (*\label{sementer}*)
+  semaphore->value--;
+
+  if (semaphore->value < 0) {
+    do {                                                (*\label{dowhile}*)
+      cond_wait (semaphore->cond, semaphore->mutex);
+    } while (semaphore->wakeups < 1);
+    semaphore->wakeups--;
+  }
+  mutex_unlock (semaphore->mutex);
+}
+
+void sem_signal (Semaphore *semaphore)
+{
+  mutex_lock (semaphore->mutex);
+  semaphore->value++;
+
+  if (semaphore->value <= 0) {
+    semaphore->wakeups++;
+    cond_signal (semaphore->cond);
+  }
+  mutex_unlock (semaphore->mutex);
+}
+\end{lstbox}
+
+Most of this is straightforward; the only thing that might be 
+tricky is the {\tt do...while} loop at Line~\ref{dowhile}.
+This is an unusual way to use a condition variable, but in
+this case it is necessary.
+
+Puzzle: why can't we replace this {\tt do...while} loop
+with a {\tt while} loop?
+
+%% \clearemptydoublepage
+\subsec{Semaphore implementation detail}
+
+With a {\tt while} loop, this implementation would not have
+Property 3.  It would be possible for a thread to signal
+and then run around and catch its own signal.
+
+With the {\tt do...while} loop, it is guaranteed\footnote{Well,
+  almost.  It turns out that a well-timed spurious wakeup (see
+  \url{http://en.wikipedia.org/wiki/Spurious_wakeup}) can violate this
+  guarantee.} that when a thread signals, one of the waiting threads
+will get the signal, even if another thread gets the mutex at
+Line~\ref{sementer} before one of the waiting threads resumes.
+

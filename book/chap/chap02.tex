@@ -1,0 +1,149 @@
+In real life a semaphore is a system of signals used to communicate
+visually, usually with flags, lights, or some other mechanism.  In
+software, a semaphore is a data structure that is useful for solving a
+variety of synchronization problems.
+
+Semaphores were invented by Edsger Dijkstra, a famously eccentric
+computer scientist.  Some of the details have changed since the
+original design, but the basic idea is the same.
+
+\section{Definition}
+
+A semaphore is like an integer, with three differences:
+
+\begin{enumerate}
+
+\item When you create the semaphore, you can initialize its value to
+any integer, but after that the only operations you are allowed to
+perform are increment (increase by one) and decrement (decrease by
+one).  You cannot read the current value of the semaphore.
+
+\item When a thread decrements the semaphore, if the result is
+negative, the thread blocks itself and cannot continue until another
+thread increments the semaphore.
+
+\item When a thread increments the semaphore, if there are other
+threads waiting, one of the waiting threads gets unblocked.
+
+\end{enumerate}
+
+To say that a thread blocks itself (or simply ``blocks'') is to say
+that it notifies the scheduler that it cannot proceed.  The scheduler
+will prevent the thread from running until an event occurs that causes
+the thread to become unblocked.  In the tradition of mixed metaphors
+in computer science, unblocking is often called ``waking''.
+
+That's all there is to the definition, but there are some
+consequences of the definition you might want to think about.
+
+\begin{itemize}
+
+\item In general, there is no way to know before a thread decrements a
+semaphore whether it will block or not (in specific cases you might
+be able to prove that it will or will not).
+
+\item After a thread increments a semaphore and another thread gets
+woken up, both threads continue running concurrently.  There is no way
+to know which thread, if either, will continue immediately.
+
+\item When you signal a semaphore, you don't necessarily know whether
+another thread is waiting, so the number of unblocked threads may
+be zero or one.
+
+\end{itemize}
+
+Finally, you might want to think about what the value of the
+semaphore means.  If the value is positive, then it represents the
+number of threads that can decrement without blocking.  If it
+is negative, then it represents the number of threads that have
+blocked and are waiting.  If the value is zero, it means there
+are no threads waiting, but if a thread tries to decrement, it
+will block.
+
+
+\section{Syntax}
+
+In most programming environments, an implementation of semaphores is
+available as part of the programming language or the operating system.
+Different implementations sometimes offer slightly different
+capabilities, and usually require different syntax.
+
+In this book I will use a simple pseudo-language to demonstrate
+how semaphores work.  The syntax for creating a new semaphore
+and initializing it is
+
+\begin{lstbox}{Semaphore initialization syntax}
+fred = Semaphore(1)
+\end{lstbox}
+
+The function {\tt Semaphore} is a constructor; it creates and
+returns a new Semaphore.  The initial value of the semaphore
+is passed as a parameter to the constructor.
+
+The semaphore operations go by different names in different environments.
+The most common alternatives are 
+
+\begin{lstbox}{Semaphore operations}
+fred.increment()
+fred.decrement()	
+\end{lstbox}
+
+and
+
+\begin{lstbox}{Semaphore operations}
+fred.signal()
+fred.wait()	
+\end{lstbox}
+
+and
+
+\begin{lstbox}{Semaphore operations}
+fred.V()
+fred.P()	
+\end{lstbox}
+
+It may be surprising that there are so many names, but there is a
+reason.  {\tt increment} and {\tt decrement}
+describe what the operations {\em do}.  {\tt signal} and {\tt wait}
+describe what they are often {\em used for}.  And {\tt V} and {\tt P} were
+the original names proposed by Dijkstra, who wisely realized that a
+meaningless name is better than a misleading name\footnote{If you speak
+Dutch, {\tt V} and {\tt P} aren't completely meaningless.}.
+
+I consider the other pairs misleading because {\tt increment} and {\tt
+decrement} neglect to mention the possibility of blocking and waking,
+and semaphores are often used in ways that have nothing to do with
+{\tt signal} and {\tt wait}.
+
+If you insist on meaningful names, then I would suggest these:
+
+\begin{lstbox}{Semaphore operations}
+fred.increment_and_wake_a_waiting_process_if_any()
+fred.decrement_and_block_if_the_result_is_negative()	
+\end{lstbox}
+
+I don't think the world is likely to embrace either of these names
+soon.  In the meantime, I choose (more or less arbitrarily) to use
+{\tt signal} and {\tt wait}.
+
+
+\section{Why semaphores?}
+
+Looking at the definition of semaphores, it is not at all obvious why
+they are useful.  It's true that we don't {\em need} semaphores to
+solve synchronization problems, but there are some advantages to using
+them:
+
+\begin{itemize}
+
+\item Semaphores impose deliberate constraints that help
+programmers avoid errors.
+
+\item Solutions using semaphores are often clean and organized,
+making it easy to demonstrate their correctness.
+
+\item Semaphores can be implemented efficiently on many systems,
+so solutions that use semaphores are portable and usually
+efficient.
+
+\end{itemize}

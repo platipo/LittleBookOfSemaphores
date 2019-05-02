@@ -1,0 +1,1036 @@
+This chapter presents a series of basic synchronization problems and
+shows ways of using semaphores to solve them.  These problems include
+serialization and mutual exclusion, which we have already seen, along
+with others.
+
+\section{Signaling}
+
+Possibly the simplest use for a semaphore is {\bf signaling},
+which means that one thread sends a signal to another
+thread to indicate that something has happened.
+
+Signaling makes it possible to guarantee
+that a section of code in one thread will run before a section of
+code in another thread; in other words, it solves the serialization
+problem.
+
+Assume that we have a semaphore named {\tt sem} with initial value
+0, and that Threads A and B have shared access to it.
+
+\begin{lsthalfbox}[before skip=0.6em]{Thread A}
+statement a1
+sem.signal()
+\end{lsthalfbox}
+\begin{lsthalfbox}[after skip=0.6em]{Thread B}
+sem.wait()
+statement b1
+\end{lsthalfbox}
+
+The word {\tt statement} represents an arbitrary program statement.
+To make the example concrete, imagine that {\tt a1} reads a line
+from a file, and {\tt b1} displays the line on the screen.
+The semaphore in this program guarantees that Thread A
+has completed {\tt a1} before Thread B begins {\tt b1}.
+
+Here's how it works: if thread B gets to the
+{\tt wait} statement first, it will find the initial
+value, zero, and it will block.  Then when Thread A signals,
+Thread B proceeds.
+
+Similarly, if Thread A gets to the signal first then the
+value of the semaphore will be incremented, and when Thread
+B gets to the wait, it will proceed immediately.
+Either way, the order of {\tt a1} and {\tt b1} is guaranteed.
+
+This use of semaphores is the basis of the names {\tt signal}
+and {\tt wait}, and in this case the names are conveniently
+mnemonic.  Unfortunately, we will see other cases where the
+names are less helpful.
+
+Speaking of meaningful names, {\tt sem} isn't one.  When
+possible, it is a good idea to give a semaphore a name
+that indicates what it represents.  In this case a name like
+{\tt a1Done} might be good, so that {\tt a1done.signal()} means
+``signal that a1 is done,'' and {\tt a1done.wait()} means
+``wait until a1 is done.''
+
+
+\section{Sync.py}
+\label{sync.py}
+
+TODO: write about using sync, starting with signal.py
+
+Why does Thread B signal {\tt initComplete}?
+
+
+\section{Rendezvous}
+\label{rendezvous}
+
+\begin{puzzlebox}{Puzzle}
+Generalize the signal pattern so that it works both
+ways.  Thread A has to wait for Thread B and vice versa.  In other
+words, given this code
+
+\begin{lsthalfbox}[before skip=0.6em]{Thread A}
+statement a1
+statement a2
+\end{lsthalfbox}
+\begin{lsthalfbox}[after skip=0.6em]{Thread B}
+statement b1
+statement b2
+\end{lsthalfbox}
+
+we want to guarantee that {\tt a1} happens before {\tt b2} and
+{\tt b1} happens before {\tt a2}.  In writing your solution, be sure
+to specify the names and initial values of your semaphores
+(little hint there).
+
+Your solution should not enforce too many constraints.  For example,
+we don't care about the order of {\tt a1} and {\tt b1}.  In your
+solution, either order should be possible.
+
+This synchronization problem has a name; it's a
+rendezvous.  The idea is that two threads rendezvous
+at a point of execution, and neither is allowed to proceed
+until both have arrived.
+\tcbsubtitle{Hint}
+The chances are good that you were able to figure out a solution,
+but if not, here is a hint.  Create two semaphores, named {\tt aArrived}
+and {\tt bArrived}, and initialize them both to zero.
+
+As the names suggest, {\tt aArrived} indicates whether Thread A
+has arrived at the rendezvous, and {\tt bArrived} likewise.
+\end{puzzlebox}
+
+\subsection*{Solution}
+Here is my solution, based on the previous hint:
+
+\begin{lsthalfbox}[before skip=0.6em]{Thread A}
+statement a1
+aArrived.signal()
+bArrived.wait()
+statement a2
+\end{lsthalfbox}
+\begin{lsthalfbox}[after skip=0.6em]{Thread B}
+statement b1
+bArrived.signal()
+aArrived.wait()
+statement b2
+\end{lsthalfbox}
+
+While working on the previous problem, you might have
+tried something like this:
+
+\begin{lsthalfbox}[before skip=0.6em]{Thread A}
+statement a1
+bArrived.wait()
+aArrived.signal()
+statement a2
+\end{lsthalfbox}
+\begin{lsthalfbox}[after skip=0.6em]{Thread B}
+statement b1
+bArrived.signal()
+aArrived.wait()
+statement b2
+\end{lsthalfbox}
+
+This solution also works, although it is probably less
+efficient, since it might have to switch between A and B
+one time more than necessary.
+
+If A arrives first, it waits for B.  When B arrives, it wakes
+A and might proceed immediately to its {\tt wait} in which
+case it blocks, allowing A to reach its {\tt signal}, after
+which both threads can proceed.
+
+Think about the other possible paths through this code and
+convince yourself that in all cases neither thread can
+proceed until both have arrived.
+
+%%%\subsec {Deadlock \#1}
+\sub{Deadlock \#1}
+
+Again, while working on the previous problem, you might have
+tried something like this:
+%\newline
+
+\begin{lsthalfbox}[before skip=0.6em]{Thread A}
+statement a1
+bArrived.wait()
+aArrived.signal()
+statement a2
+\end{lsthalfbox}
+\begin{lsthalfbox}[after skip=0.6em]{Thread B}
+statement b1
+aArrived.wait()
+bArrived.signal()
+statement b2
+\end{lsthalfbox}
+%\newline
+
+If so, I hope you rejected it quickly, because it has a serious
+problem.  Assuming that A arrives first, it will block at its
+{\tt wait}.  When B arrives, it will also block, since A wasn't
+able to signal {\tt aArrived}.  At this point, neither thread
+can proceed, and never will.
+
+This situation is called a {\bf deadlock} and, obviously, it is
+not a successful solution of the synchronization problem.  In
+this case, the error is obvious, but often the possibility of
+deadlock is more subtle.  We will see more examples later.
+
+
+\section{Mutex}
+
+A second common use for semaphores is to enforce mutual exclusion.
+We have already seen one use for mutual exclusion, controlling
+concurrent access to shared variables.  The mutex guarantees
+that only one thread accesses the shared variable at a time.
+
+A mutex is like a token that passes from one thread to another,
+allowing one thread at a time to proceed.  For example, in {\em The
+Lord of the Flies} a group of children use a conch as a mutex.  In
+order to speak, you have to hold the conch.  As long as only one child
+holds the conch, only one can speak\footnote{Although this metaphor
+is helpful for now, it can also be misleading, as you will see in
+Section~\ref{water}}.
+
+Similarly, in order for a thread to access a shared variable,
+it has to ``get'' the mutex; when it is done, it ``releases''
+the mutex.  Only one thread can hold the mutex at a time.
+
+\begin{puzzlebox}{Puzzle}
+Add semaphores to the following example to
+enforce mutual exclusion to the shared variable {\tt count}.
+
+\begin{lsthalfbox}[before skip=0.6em]{Thread A}
+count = count + 1
+\end{lsthalfbox}
+\begin{lsthalfbox}[after skip=0.6em]{Thread B}
+count = count + 1
+\end{lsthalfbox}
+
+
+%% \clearemptydoublepage
+%%% \subsec{Mutual exclusion hint}
+\tcbsubtitle{Hint}
+
+Create a semaphore named {\tt mutex} that is initialized
+to 1.  A value of one means that a thread may proceed and
+access the shared variable; a value of zero means that it
+has to wait for another thread to release the mutex.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec{Mutual exclusion solution}
+\subsection*{Mutual exclusion solution}
+
+Here is a solution:
+
+\begin{lsthalfbox}[before skip=0.6em]{Thread A}
+mutex.wait()
+    # critical section
+    count = count + 1
+mutex.signal()
+\end{lsthalfbox}
+\begin{lsthalfbox}[after skip=0.6em]{Thread B}
+mutex.wait()
+    # critical section
+    count = count + 1
+mutex.signal()
+\end{lsthalfbox}
+
+Since {\tt mutex} is initially 1, whichever thread gets to
+the {\tt wait} first will be able to proceed immediately.
+Of course, the act of waiting on the semaphore has the effect
+of decrementing it, so the second thread to
+arrive will have to wait until the first signals.
+
+I have indented the update operation to show that it is contained
+within the mutex.
+
+In this example, both threads are running the same code.  This is
+sometimes called a {\bf symmetric} solution.  If the threads have to
+run different code, the solution is {\bf asymmetric}.  Symmetric
+solutions are often easier to generalize.  In this case, the mutex
+solution can handle any number of concurrent threads without
+modification.  As long as every thread waits before 
+performing an update and signals after, then no two threads
+will access {\tt count} concurrently.
+
+Often the code that needs to be protected is called the
+{\bf critical section}, I suppose because it is critically
+important to prevent concurrent access.
+
+In the tradition of computer science and mixed metaphors, there
+are several other ways people sometimes talk about mutexes.  In
+the metaphor we have been using so far, the mutex is a token
+that is passed from one thread to another.
+
+In an alternative
+metaphor, we think of the critical section as a room, and
+only one thread is allowed to be in the room at a time.
+In this metaphor, mutexes are called locks, and a thread
+is said to lock the mutex before entering and unlock it while
+exiting.  Occasionally, though, people mix the metaphors and
+talk about ``getting'' or ``releasing'' a lock, which doesn't
+make much sense.
+
+Both metaphors are potentially useful and potentially misleading.
+As you work on the next problem, try out both ways of thinking
+and see which one leads you to a solution.
+
+
+\section{Multiplex}
+
+\begin{puzzlebox}{Puzzle}
+Generalize the previous solution so that it allows multiple
+threads to run in the critical section at the same time, but it
+enforces an upper limit on the number of concurrent threads.  In other
+words, no more than {\tt n} threads can run in the critical section at
+the same time.
+
+This pattern is called a {\bf multiplex}.  In real life, the multiplex
+problem occurs at busy nightclubs where there is a maximum number of
+people allowed in the building at a time, either to maintain fire
+safety or to create the illusion of exclusivity.
+
+At such places a bouncer usually enforces the synchronization
+constraint by keeping track of the number of people inside
+and barring arrivals when the room is at capacity.  Then,
+whenever one person leaves another is allowed to enter.
+
+Enforcing this constraint with semaphores may sound difficult, but it
+is almost trivial.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec{Multiplex solution}
+\subsection*{Multiplex solution}
+
+To allow multiple threads to run in the critical section, just
+initialize the semaphore to {\tt n}, which is the maximum number
+of threads that should be allowed.
+
+At any time, the value of the semaphore represents the
+number of additional threads that may enter.  If the value is zero,
+then the next thread will block until one of the threads inside
+exits and signals.  When all threads have exited the value of the
+semaphore is restored to {\tt n}.
+
+Since the solution is symmetric, it's conventional to show only one
+copy of the code, but you should imagine multiple copies of the code
+running concurrently in multiple threads.
+
+\begin{lstbox}{Multiplex solution}
+multiplex.wait()
+    critical section 
+multiplex.signal()      
+\end{lstbox}
+
+What happens if the critical section is occupied and more than one
+thread arrives?  Of course, what we want is for all the arrivals to
+wait.  This solution does exactly that.  Each time an arrival joins
+the queue, the semaphore is decremented, so that the value of the
+semaphore (negated) represents the number of threads in queue.
+
+When a thread leaves, it signals the semaphore, incrementing
+its value and allowing one of the waiting threads to proceed.
+
+Thinking again of metaphors, in this case I find it useful
+to think of the semaphore as a set of tokens (rather than
+a lock).
+As each thread invokes {\tt wait}, it picks up one of
+the tokens; when it invokes {\tt signal} it releases one.
+Only a thread that holds a token can enter the room.  If no
+tokens are available when a thread arrives, it waits until
+another thread releases one.
+
+In real life, ticket windows sometimes use a system like
+this.  They hand out tokens (sometimes poker chips) to
+customers in line.  Each token allows the holder to buy a ticket.
+
+
+\section{Barrier}
+
+Consider again the Rendezvous problem from Section~\ref{rendezvous}.
+A limitation of the solution we presented is that it does
+not work with more than two threads.
+
+\begin{puzzlebox}{Puzzle}
+Generalize the rendezvous solution.  Every thread should
+run the following code:
+
+\begin{lstbox}{Barrier code}
+rendezvous
+critical point
+\end{lstbox}
+
+The synchronization requirement is that
+no thread executes {\tt critical point} until after all
+threads have executed {\tt rendezvous}.
+
+You can assume that there are $n$
+threads and that this value is stored in a variable, {\tt n},
+that is accessible from all threads.
+
+When the first $n-1$ threads arrive they should block until the $n$th
+thread arrives, at which point all the threads may proceed.
+
+
+%% \clearemptydoublepage
+%%% \subsec {Barrier hint}
+\tcbsubtitle{Hint}
+
+For many of the problems in this book I will provide hints
+by presenting the variables I used in my solution and
+explaining their roles.
+
+\begin{lstbox}{Barrier hint}
+n = the number of threads
+count = 0
+mutex = Semaphore(1)
+barrier = Semaphore(0)
+\end{lstbox}
+
+{\tt count} keeps track of how many threads have arrived.
+{\tt mutex} provides exclusive access to {\tt count} so that
+threads can increment it safely.
+
+{\tt barrier} is locked
+(zero or negative) until all threads arrive; then it should
+be unlocked (1 or more).
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec {Barrier non-solution}
+\sub{Barrier non-solution}
+
+First I will present a solution that is not quite right, because
+it is useful to examine incorrect solutions and figure out what
+is wrong.
+
+\begin{lstbox}{Barrier non-solution}
+rendezvous
+
+mutex.wait()
+    count = count + 1
+mutex.signal()
+
+if count == n: barrier.signal()
+
+barrier.wait()
+
+critical point
+\end{lstbox}
+
+Since {\tt count} is protected by a mutex, it counts the number of
+threads that pass.  The first $n-1$ threads wait when they get to the
+barrier, which is initially locked.  When the $n$th thread arrives, it
+unlocks the barrier.
+
+\begin{puzzlebox}{Puzzle}
+What is wrong with this solution?
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec{Deadlock \#2}
+\sub{Deadlock \#2}
+The problem is a deadlock.
+
+An an example, imagine that $n=5$
+and that 4 threads are waiting at the barrier.  The value
+of the semaphore is the number of threads in queue, negated, 
+which is -4.
+
+When the 5th thread signals the barrier, one of the waiting
+threads is allowed to proceed, and the semaphore is incremented
+to -3.
+
+But then no one signals the semaphore again and none of the
+other threads can pass the barrier.
+This is a second example of a deadlock.
+
+
+\begin{puzzlebox}{Puzzle}
+Does this code always create a deadlock?  Can you find an
+execution path through this code that does {\em not} cause a deadlock?
+
+\vspace{1em}
+Fix the problem.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec{Barrier solution}
+\sub{Barrier solution}
+\label{barrier}
+
+Finally, here is a working barrier:
+
+\begin{lstbox}{Barrier solution}
+rendezvous
+
+mutex.wait()
+    count = count + 1
+mutex.signal()
+
+if count == n: barrier.signal()
+
+barrier.wait()
+barrier.signal()
+
+critical point
+\end{lstbox}
+
+The only change is another {\tt signal} after waiting
+at the barrier.  Now as each thread passes, it signals the
+semaphore so that the next thread can pass.
+
+This pattern, a {\tt wait} and a {\tt signal} in rapid
+succession, occurs often enough that it has a name;
+it's called a {\bf turnstile}, because it allows one thread to pass
+at a time, and it can be locked to bar all threads.
+
+In its initial state (zero), the turnstile is locked.  The $n$th
+thread unlocks it and then all $n$ threads go through.
+
+It might seem dangerous to read the value of {\tt count} outside the
+mutex.  In this case it is not a problem, but in general it is
+probably not a good idea.  We will clean this up in a few pages, but
+in the meantime, you might want to consider these questions: After the
+$n$th thread, what state is the turnstile in?  Is there any way the
+barrier might be signaled more than once?
+
+
+%% \clearemptydoublepage
+%%% \subsec {Deadlock \#3}
+\sub{Deadlock \#3}
+
+Since only one thread at a time can pass through the
+mutex, and only one thread at a time can pass through
+the turnstile, it might seen reasonable to put the
+turnstile inside the mutex, like this:
+
+\begin{lstbox}{Bad barrier solution}
+rendezvous
+
+mutex.wait()
+    count = count + 1
+    if count == n: barrier.signal()
+
+    barrier.wait()
+    barrier.signal()
+mutex.signal()
+
+critical point
+\end{lstbox}
+
+This turns out to be a bad idea because it can cause a
+deadlock.
+
+Imagine that the first thread enters the
+mutex and then blocks when it reaches the turnstile.
+Since the mutex is locked, no other threads can enter,
+so the condition, {\tt count==n}, will never be true and
+no one will ever unlock the turnstile.
+
+In this case the deadlock is fairly obvious, but it
+demonstrates a
+common source of deadlocks: blocking on a semaphore while
+holding a mutex.
+
+
+\section {Reusable barrier}
+\label{rebar}
+
+Often a set of cooperating threads will perform a series of steps
+in a loop and synchronize at a barrier after each step.  For this
+application we need a reusable barrier that locks itself after
+all the threads have passed through.
+
+\begin{puzzlebox}{Puzzle}
+Rewrite the barrier solution so that after all the threads
+have passed through, the turnstile is locked again.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec {Reusable barrier non-solution \#1}
+\subsection*{Reusable barrier non-solution \#1}
+
+Once again, we will start with a simple attempt at a solution
+and gradually improve it:
+
+\begin{lstbox}{Reusable barrier non-solution}
+rendezvous
+
+mutex.wait()
+    count += 1
+mutex.signal()
+
+if count == n: turnstile.signal()       (*\label{problem}*)
+
+turnstile.wait()
+turnstile.signal()
+
+critical point
+
+mutex.wait()
+    count -= 1
+mutex.signal()
+
+if count == 0: turnstile.wait()         (*\label{problem2}*)
+\end{lstbox}
+
+Notice that the code after the turnstile is pretty much the same as
+the code before it.  Again, we have to use the mutex to protect access
+to the shared variable {\tt count}.
+Tragically, though, this code is not quite correct.
+
+\vspace{1em}
+What is the problem?
+
+
+%% \clearemptydoublepage
+%%% \subsec {Reusable barrier problem \#1}
+\subsection*{Reusable barrier problem \#1}
+
+There is a problem spot at Line~\ref{problem} of the previous code.
+
+If the $n-1$th thread is interrupted at this point,
+and then the $n$th thread comes through the mutex,
+both threads will find that {\tt count==n} and both
+threads will signal the turnstile.  In fact, it is even
+possible that {\em all} the threads will signal the turnstile.
+
+Similarly, at Line~\ref{problem2} it is possible for multiple
+threads to {\tt wait}, which will cause a deadlock.
+
+\begin{puzzlebox}{Puzzle}
+Fix the problem.
+\end{puzzlebox}
+
+%% \clearemptydoublepage
+%%% \subsec {Reusable barrier non-solution \#2}
+\subsection*{Reusable barrier non-solution \#2}
+
+This attempt fixes the previous error, but a subtle problem
+remains.
+
+\begin{lstbox}{Reusable barrier non-solution}
+rendezvous
+
+mutex.wait()
+    count += 1
+    if count == n: turnstile.signal()
+mutex.signal()
+
+turnstile.wait()
+turnstile.signal()
+
+critical point
+
+mutex.wait()
+    count -= 1
+    if count == 0: turnstile.wait()
+mutex.signal()
+\end{lstbox}
+
+In both cases the check is inside the mutex so that
+a thread cannot be interrupted after changing the counter
+and before checking it.
+
+Tragically, this code is {\em still} not correct.
+Remember that this barrier will be inside a loop.  So, after
+executing the last line, each thread will go back
+to the rendezvous.
+
+\begin{puzzlebox}{Puzzle}
+Identify and fix the problem.
+
+
+%% \clearemptydoublepage
+%%% \subsec {Reusable barrier hint}
+\tcbsubtitle{Hint}
+
+As it is currently written, this code
+allows a precocious thread to pass through the second mutex,
+then loop around and pass through the first mutex and the
+turnstile, effectively getting ahead of the other threads by
+a lap.
+
+To solve this problem we can use two turnstiles.
+
+\begin{lstbox}{Reusable barrier hint}
+turnstile = Semaphore(0)
+turnstile2 = Semaphore(1)
+mutex = Semaphore(1)
+\end{lstbox}
+
+Initially the first is locked and the second is open.  When all the
+threads arrive at the first, we lock the second and unlock the first.
+When all the threads arrive at the second we relock the first,
+which makes it safe for the threads to loop around to the beginning,
+and then open the second.
+\end{puzzlebox}
+
+
+
+%% \clearemptydoublepage
+%%% \subsec {Reusable barrier solution}
+\subsection*{Reusable barrier solution}
+
+\begin{lstbox}{Reusable barrier solution}
+# rendezvous
+
+mutex.wait()
+    count += 1
+    if count == n:
+        turnstile2.wait()       # lock the second
+        turnstile.signal()      # unlock the first
+mutex.signal()
+
+turnstile.wait()                # first turnstile
+turnstile.signal()
+
+# critical point
+
+mutex.wait()
+    count -= 1
+    if count == 0: 
+        turnstile.wait()         # lock the first
+        turnstile2.signal()      # unlock the second
+mutex.signal()
+
+turnstile2.wait()                # second turnstile
+turnstile2.signal()
+\end{lstbox}
+
+This solution is sometimes called a {\bf two-phase barrier} because
+it forces all the threads to wait twice: once for all the threads
+to arrive and again for all the threads to execute the critical
+section.
+
+Unfortunately, this solution is typical of most non-trivial
+synchronization code: it is difficult to be sure that a solution is
+correct.  Often there is a subtle way that a particular path through
+the program can cause an error.
+
+To make matters worse, testing an implementation of a solution
+is not much help.  The error might occur very rarely
+because the particular path that causes it might
+require a spectacularly unlucky combination of circumstances.
+Such errors are almost
+impossible to reproduce and debug by conventional means.
+
+The only alternative is to examine the code carefully and
+``prove'' that it is correct.  I put ``prove'' in quotation
+marks because I don't mean, necessarily, that you have to write
+a formal proof (although there are zealots who encourage
+such lunacy).
+
+The kind of proof I have in mind is more informal.  We can take
+advantage of the structure of the code, and the idioms we have
+developed, to assert, and then demonstrate, a number of
+intermediate-level claims about the program.  For example: \begin{enumerate} 
+\item Only the $n$th thread can lock or unlock the turnstiles.
+
+\item Before a thread can unlock the first turnstile, it has to close 
+the second, and vice versa; therefore it is impossible for one thread
+to get ahead of the others by more than one turnstile.
+
+\end{enumerate}
+
+By finding the right kinds of statements to assert and
+prove, you can sometimes find a concise way to convince yourself
+(or a skeptical colleague) that your code is bulletproof.
+
+
+
+%% \clearemptydoublepage
+\blankpage
+\subsec {Preloaded turnstile}
+
+One nice thing about a turnstile is that it is a versatile
+component you can use in a variety of solutions.  But one
+drawback is that it forces threads to go through sequentially,
+which may cause more context switching than necessary.
+
+In the reusable barrier solution, we can simplify the solution if the
+thread that unlocks the turnstile preloads the turnstile with enough
+signals to let the right number of threads through\footnote{Thanks to
+Matt Tesch for this solution!}.
+
+The syntax I am using here assumes that {\tt signal} can take a
+parameter that specifies the number of signals.  This is a
+non-standard feature, but it would be easy to implement with a loop.
+The only thing to keep in mind is that the multiple signals are not
+atomic; that is, the signaling thread might be interrupted in the
+loop.  But in this case that is not a problem.
+
+\begin{lstbox}{Reusable barrier solution}
+# rendezvous
+
+mutex.wait()
+    count += 1
+    if count == n:
+        turnstile.signal(n)      # unlock the first
+mutex.signal()
+
+turnstile.wait()                 # first turnstile
+
+# critical point
+
+mutex.wait()
+    count -= 1
+    if count == 0:
+        turnstile2.signal(n)     # unlock the second
+mutex.signal()
+
+turnstile2.wait()                # second turnstile
+\end{lstbox}
+
+When the $n$th thread arrives, it preloads the first turnstile with
+one signal for each thread.  When the $n$th thread passes the
+turnstile, it ``takes the last token'' and leaves the turnstile locked
+again.
+
+The same thing happens at the second turnstile, which is
+unlocked when the last thread goes through the mutex.
+
+
+\newpage
+\subsec {Barrier objects}
+
+It is natural to encapsulate a barrier in an object.  I will
+borrow the Python syntax for defining a class:
+
+\begin{lstbox}{Barrier class}
+class Barrier:
+    def __init__(self, n):
+        self.n = n
+        self.count = 0
+        self.mutex = Semaphore(1)
+        self.turnstile = Semaphore(0)
+        self.turnstile2 = Semaphore(0)
+
+    def phase1(self):
+        self.mutex.wait()
+            self.count += 1
+            if self.count == self.n:
+                self.turnstile.signal(self.n) 
+        self.mutex.signal()
+        self.turnstile.wait()            
+
+    def phase2(self):
+        self.mutex.wait()
+            self.count -= 1
+            if self.count == 0:
+                self.turnstile2.signal(self.n)
+        self.mutex.signal()
+        self.turnstile2.wait()
+
+    def wait(self):
+        self.phase1()
+        self.phase2()
+\end{lstbox}
+
+The {\tt \_\_init\_\_} method runs when we create a new
+{\tt Barrier} object, and initializes the instance variables.
+The parameter {\tt n} is the number of threads that have
+to invoke {\tt wait} before the Barrier opens.
+
+The variable {\tt self} refers to the object the method
+is operating on.  Since each barrier object has its own
+mutex and turnstiles, {\tt self.mutex} refers to the specific
+mutex of the current object.
+
+Here is an example that creates a {\tt Barrier}
+object and waits on it:
+
+\begin{lstbox}{Barrier interface}
+barrier = Barrier(n)        # initialize a new barrier
+barrier.wait()              # wait at a barrier
+\end{lstbox}
+
+Optionally, code that uses a barrier can call {\tt phase1} and
+{\tt phase2} separately, if there is something else that
+should be done in between.
+
+
+
+\section{Queue}
+\label{dancers}
+
+Semaphores can also be used to represent a queue.  In this
+case, the initial value is 0, and usually the code is written
+so that it is not possible
+to signal unless there is a thread waiting, so the value of the
+semaphore is never positive.
+
+For example, imagine that threads represent ballroom dancers
+and that two kinds of dancers, leaders and followers, wait
+in two queues before entering the dance floor.  When a leader
+arrives, it checks to see if there is a follower waiting.
+If so, they can both proceed.  Otherwise it waits.
+
+Similarly, when a follower arrives, it checks for a leader and
+either proceeds or waits, accordingly.
+
+\begin{puzzlebox}{Puzzle}
+Write code for leaders and followers that enforces these
+constraints.
+
+%% \clearemptydoublepage
+%%% \subsec {Queue hint}
+\tcbsubtitle{Hint}
+
+Here are the variables I used in my solution:
+
+\begin{lstbox}{Queue hint}
+leaderQueue = Semaphore(0)
+followerQueue = Semaphore(0)
+\end{lstbox}
+
+{\tt leaderQueue} is the queue where leaders wait 
+and {\tt followerQueue} is the queue where followers wait.
+\end{puzzlebox}
+
+
+
+%% \clearemptydoublepage
+%%% \subsec {Queue solution}
+\sub{Queue solution}
+
+Here is the code for leaders:
+
+\begin{lstbox}{Queue solution (leaders)}
+followerQueue.signal()
+leaderQueue.wait()
+dance()
+\end{lstbox}
+
+And here is the code for followers:
+
+\begin{lstbox}{Queue solution (followers)}
+leaderQueue.signal()
+followerQueue.wait()
+dance()
+\end{lstbox}
+
+This solution is about as simple as it gets; it is just a Rendezvous.
+Each leader signals exactly one follower, and each follower signals
+one leader, so it is guaranteed that leaders and followers are
+allowed to proceed in pairs.  But whether they actually proceed in
+pairs is not clear.  It is possible for any number of threads to
+accumulate before executing {\tt dance}, and so it is possible for
+any number of leaders to {\tt dance} before any followers do.
+Depending on the semantics of {\tt dance}, that behavior may or
+may not be problematic.
+
+To make things more interesting, let's add the additional constraint
+that each leader can invoke {\tt dance} concurrently with only
+one follower, and vice versa.  In other words, you got to dance
+with the one that brought you\footnote{Song lyric performed by Shania
+Twain}.
+
+\section{Exclusive queue}
+\begin{puzzlebox}{Puzzle}
+Write a solution to this ``exclusive queue'' problem.
+
+%% \clearemptydoublepage
+%%% \subsec {Exclusive queue hint}
+\tcbsubtitle{Hint}
+
+Here are the variables I used in my solution:
+
+\begin{lstbox}{Queue hint}
+leaders = followers = 0
+mutex = Semaphore(1)
+leaderQueue = Semaphore(0)
+followerQueue = Semaphore(0)
+rendezvous = Semaphore(0)
+\end{lstbox}
+
+{\tt leaders} and {\tt followers} are counters that
+keep track of the number of dancers of each kinds that are
+waiting.  The mutex guarantees exclusive access to the counters.
+
+{\tt leaderQueue} and {\tt followerQueue} are the queues where
+dancers wait.  {\tt rendezvous} is used to check that both threads
+are done dancing.
+\end{puzzlebox}
+
+
+
+%% \clearemptydoublepage
+%%% \subsec {Exclusive queue solution}
+\sub{Exclusive queue solution}
+
+Here is the code for leaders:
+
+\begin{lstbox}{Queue solution (leaders)}
+mutex.wait()
+if followers > 0:
+    followers--
+    followerQueue.signal()
+else:
+    leaders++
+    mutex.signal()
+    leaderQueue.wait()    
+
+dance()
+rendezvous.wait()
+mutex.signal()
+\end{lstbox}
+
+When a leader arrives, it gets the mutex that protects {\tt leaders}
+and {\tt followers}.  If there is a follower waiting, the leader
+decrements {\tt followers}, signals a follower, and then invokes
+{\tt dance}, all before releasing {\tt mutex}.  That guarantees that
+there can be only one follower thread running {\tt dance}
+concurrently.
+
+If there are no followers waiting, the leader has to give up the mutex
+before waiting on {\tt leaderQueue}.
+
+The code for followers is similar:
+
+\begin{lstbox}{Queue solution (followers)}
+mutex.wait()
+if leaders > 0:
+    leaders--
+    leaderQueue.signal()
+else:
+    followers++
+    mutex.signal()
+    followerQueue.wait()    
+
+dance()
+rendezvous.signal()
+\end{lstbox}
+
+When a follower arrives, it checks for a waiting leader.  If there
+is one, the follower decrements {\tt leaders}, signals a leader, and
+executes {\tt dance}, all without releasing {\tt mutex}.  Actually,
+in this case the follower {\em never} releases {\tt mutex};
+the leader does.  We don't have to keep track of which thread has the
+mutex because we know that one of them does, and either one of them can
+release it.  In my solution it's always the leader.
+
+When a semaphore is used as a queue\footnote{A semaphore used as a
+queue is very similar to a condition variable.  The primary difference
+is that threads have to release the mutex explicitly before waiting,
+and reacquire it explicitly afterwards (but only if they need it).},
+I find it useful to read ``wait'' as ``wait for this queue'' and
+signal as ``let someone from this queue go.''
+
+In this code we never signal a queue unless someone is waiting,
+so the values of the queue semaphores are seldom positive.
+It is possible, though.  See if you can figure out how.
+

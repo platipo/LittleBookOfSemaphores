@@ -1,0 +1,325 @@
+By using pseudocode, we have avoided some of the ugly
+details of synchronization in the real world.  In this chapter
+we'll look at real synchronization code in Python; in the
+next chapter we'll look at C.
+
+Python provides a reasonably pleasant multithreading environment,
+complete with Semaphore objects.  It has
+a few foibles, but there is some cleanup code in Appendix~\ref{cleanup}
+that makes things a little better.
+
+Here is a simple example:
+
+\begin{lstbox}{}
+from threading_cleanup import *
+
+class Shared:
+    def __init__(self):
+        self.counter = 0
+
+def child_code(shared):
+    while True:
+        shared.counter += 1
+        print shared.counter
+        time.sleep(0.5)
+
+shared = Shared()
+children = [Thread(child_code, shared) for i in range(2)]
+for child in children: child.join()
+\end{lstbox}
+
+The first line runs the cleanup code from Appendix~\ref{cleanup};
+I will leave this line out of the other examples.
+
+{\tt Shared} defines an object type that will contain shared variables.
+Global variables are also shared between threads, but we won't
+use any in these examples.  Threads that are local in the sense
+that they are declared inside a function are also local in the
+sense that they are thread-specific.
+
+The child code is an infinite loop that increments {\tt counter},
+prints the new value, and then sleeps for 0.5 seconds.
+
+The parent thread creates {\tt shared} and two children,
+then waits for the children to exit (which in this case, they won't).
+
+\section{Mutex checker problem}
+
+Diligent students of synchronization will notice that the
+children make unsynchronized updates to {\tt counter}, which
+is not safe!  If you run this program, you might see some
+errors, but you probably won't.  The nasty thing about synchronization
+errors is that they are unpredictable, which means that even
+extensive testing may not reveal them.
+
+To detect errors, it is often necessary to automate the search.
+In this case, we can detect errors by keeping track of the values
+of {\tt counter}.
+
+\begin{lstbox}{}
+class Shared:
+    def __init__(self, end=10):
+        self.counter = 0
+        self.end = end
+        self.array = [0]* self.end
+
+def child_code(shared):
+    while True:
+        if shared.counter >= shared.end: break
+        shared.array[shared.counter] += 1
+        shared.counter += 1
+
+shared = Shared(10)
+children = [Thread(child_code, shared) for i in range(2)]
+for child in children: child.join()
+print shared.array
+\end{lstbox}
+
+In this example, {\tt shared} contains a list (misleadingly
+named {\tt array}) that keeps track of the number of times
+each value of counter is used.
+Each time through the loop, the children check {\tt counter}
+and quit if it exceeds {\tt end}.  If not, they use {\tt counter}
+as an index into {\tt array} and increment the corresponding
+entry.  Then they increment {\tt counter}.
+
+If everything works correctly, each entry in the array should
+be incremented exactly once.  When the children exit, the parent
+returns from {\tt join} and prints the value of {\tt array}.
+When I ran the program, I got
+%
+\begin{verbatim}
+[1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+\end{verbatim}
+%
+which is disappointingly correct.  If we increase the size of
+the array, we might expect more errors, but it also gets harder
+to check the result.
+
+%% \newpage
+\vspace{1em}
+We can automate the checker by making
+a histogram of the results in the array:
+
+\begin{lstbox}{}
+class Histogram(dict):
+    def __init__(self, seq=[]):
+        for item in seq:
+            self[item] = self.get(item, 0) + 1
+
+print Histogram(shared.array)
+\end{lstbox}
+
+Now when I run the program, I get
+
+\begin{verbatim}
+{1: 10}
+\end{verbatim}
+%
+which means that the value 1 appeared 10 times, as expected.  No
+errors so far, but if we make {\tt end} bigger, things get more
+interesting:
+
+\begin{verbatim}
+end = 100, {1: 100}
+end = 1000, {1: 1000}
+end = 10000, {1: 10000}
+end = 100000, {1: 27561, 2: 72439}
+\end{verbatim}
+%
+Oops!  When {\tt end} is big enough that there are a lot of
+context switches between the children, we start to get synchronization
+errors.  In this case, we get a {\em lot} of errors, which suggests
+that the program falls into a recurring pattern where threads are 
+consistently interrupted in the critical section.
+
+This example demonstrates one of the dangers of synchronization
+errors, which is that they may be rare, but they are not random.
+If an error occurs one time in a million, that doesn't mean it
+won't happen a million times in a row.
+
+Puzzle: add synchronization code to this program to enforce
+exclusive access to the shared variables.  You can download the
+code in this section from \url{greenteapress.com/semaphores/counter.py}
+
+
+%% \clearemptydoublepage
+\subsec {Mutex checker hint}
+
+Here is the version of {\tt Shared} I used:
+
+\begin{lstbox}{}
+class Shared:
+    def __init__(self, end=10):
+        self.counter = 0
+        self.end = end
+        self.array = [0]* self.end
+        self.mutex = Semaphore(1)
+\end{lstbox}
+
+The only change is the Semaphore named {\tt mutex}, which should
+come as no surprise.
+
+%% \clearemptydoublepage
+\subsec {Mutex checker solution}
+
+Here is my solution:
+
+\begin{lstbox}{}
+def child_code(shared):
+    while True:
+        shared.mutex.wait()
+        if shared.counter < shared.end:
+            shared.array[shared.counter] += 1
+            shared.counter += 1
+            shared.mutex.signal()
+        else:
+            shared.mutex.signal()
+            break
+\end{lstbox}
+
+Although this is not the most difficult synchronization problem
+in this book, you might have found it tricky to get the details
+right.  In particular, it is easy to forget to signal the mutex
+before breaking out of the loop, which would cause a deadlock.
+
+I ran this solution with {\tt end = 1000000}, and got the
+following result:
+
+\begin{verbatim}
+{1: 1000000}
+\end{verbatim}
+
+Of course, that doesn't mean my solution is correct, but it is
+off to a good start.
+
+
+%% \clearemptydoublepage
+\blankpage
+\section {The coke machine problem}
+
+The following program simulates producers and consumers
+adding and removing cokes from a coke machine:
+
+\begin{lstbox}{}
+import random
+
+class Shared:
+    def __init__(self, start=5):
+        self.cokes = start
+
+def consume(shared):
+    shared.cokes -= 1
+    print shared.cokes
+
+def produce(shared):
+    shared.cokes += 1
+    print shared.cokes
+
+def loop(shared, f, mu=1):
+    while True:
+        t = random.expovariate(1.0/mu)
+        time.sleep(t)
+        f(shared)
+
+shared = Shared()
+fs = [consume]*2 + [produce]*2 
+threads = [Thread(loop, shared, f) for f in fs]
+for thread in threads: thread.join()
+\end{lstbox}
+
+The capacity is 10 cokes, and that the machine is initially
+half full.  So the shared variable {\tt cokes} is 5.
+
+The program creates 4 threads, two producers and two consumers.
+They both run {\tt loop}, but producers invoke {\tt produce}
+and consumers invoke {\tt consume}.  These functions make
+unsynchronized access to a shared variable, which is a no-no.
+
+Each time through the loop, producers and consumers sleep for a
+duration chosen from an exponential distribution with mean {\tt mu}.
+Since there are two producers and two consumers, two cokes get added
+to the machine per second, on average, and two get removed.
+
+So on average the number of cokes is constant, but in the short
+run in can vary quite widely.  If you run the program for a
+while, you will probably see the value of {\tt cokes} dip
+below zero, or climb above 10.  Of course, neither of these
+should happen.
+
+Puzzle: add code to this program to enforce the following
+synchronization constraints:
+
+\begin{itemize}
+
+\item Access to {\tt cokes} should be mutually exclusive.
+
+\item If the number of cokes is zero, consumers should block
+until a coke is added.
+
+\item If the number of cokes is 10, producers should block
+until a coke is removed.
+
+\end{itemize}
+
+You can download the program from
+\url{greenteapress.com/semaphores/coke.py}
+
+
+%% \clearemptydoublepage
+\subsec {Coke machine hint}
+
+Here are the shared variables I used in my solution:
+
+\begin{lstbox}{}
+class Shared:
+    def __init__(self, start=5, capacity=10):
+        self.cokes = Semaphore(start)
+        self.slots = Semaphore(capacity-start)
+        self.mutex = Semaphore(1)
+\end{lstbox}
+
+{\tt cokes} is a Semaphore now (rather than a simple integer), 
+which makes it tricky to print its value.  Of course, you
+should never access the value of a Semaphore, and Python in
+its usual do-gooder way doesn't provide any of the cheater
+methods you see in some implementations.
+
+But you might find it interesting to know that the value
+of a Semaphore is stored in a private attribute named
+{\tt \_Semaphore\_\_value}.  Also, in case you don't know,
+Python doesn't actually enforce any restriction on access to
+private attributes.  You should never access it, of course,
+but I thought you might be interested.
+
+Ahem.
+
+
+%% \clearemptydoublepage
+\subsec {Coke machine solution}
+
+If you've read the rest of this book, you should have had no
+trouble coming up with something at least as good as this:
+
+\begin{lstbox}{}
+def consume(shared):
+    shared.cokes.wait()
+    shared.mutex.wait()
+    print shared.cokes.value()
+    shared.mutex.signal()
+    shared.slots.signal()
+
+def produce(shared):
+    shared.slots.wait()
+    shared.mutex.wait()
+    print shared.cokes._Semaphore__value
+    shared.mutex.signal()
+    shared.cokes.signal()
+\end{lstbox}
+
+If you run this program for a while, you should be able to confirm
+that the number of cokes in the machine is never negative or greater
+than 10.  So this solution seems to be correct.
+
+So far.
+

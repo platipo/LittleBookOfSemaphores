@@ -1,0 +1,165 @@
+Compared to a lot of other threading environments, Python threads are
+pretty good, but there are a couple of features that annoy me.
+Fortunately, you can fix them with a little clean-up code.
+
+\section{Semaphore methods}
+
+First, the methods for Python semaphores are called {\tt acquire}
+and {\tt release}, which is a perfectly reasonable choice, but
+after working on this book for a couple of years, I am used
+to {\tt signal} and {\tt wait}.  Fortunately, I can have it
+my way by subclassing the version of Semaphore in the
+{\tt threading} module:
+
+\begin{lstbox}{Semaphore name change}
+import threading
+ 
+class Semaphore(threading._Semaphore):
+    wait = threading._Semaphore.acquire
+    signal = threading._Semaphore.release
+\end{lstbox}
+
+Once this class is defined, you can create and manipulate Semaphores
+using the syntax in this book.
+
+\begin{lstbox}{Semaphore example}
+mutex = Semaphore()
+mutex.wait()
+mutex.signal()
+\end{lstbox}
+
+\section{Creating threads}
+
+The other feature of the {\tt threading} module that annoys
+me is the interface for creating and starting threads.  The
+usual way requires keyword arguments and two steps:
+
+\begin{lstbox}{Thread example (standard way)}
+import threading
+
+def function(x, y, z):
+    print x, y, z
+
+thread = threading.Thread(target=function, args=[1, 2, 3])
+thread.start()
+\end{lstbox}
+
+In this example, creating the thread has no immediate effect.
+But when you invoke {\tt start}, the new thread executes
+the target function with the given arguments.
+This is great if you need to do something with the thread
+before it starts, but I almost never do.
+Also, I think the keyword arguments {\tt target} and {\tt args}
+are awkward.
+
+Fortunately, we can solve both of these problems with four
+lines of code.
+
+\begin{lstbox}{Cleaned-up Thread class}
+class Thread(threading.Thread):
+    def __init__(self, t, *args):
+        threading.Thread.__init__(self, target=t, args=args)
+        self.start()
+\end{lstbox}
+
+Now we can create threads with a nicer interface, and they
+start automatically:
+
+\begin{lstbox}{Thread example (my way)}
+thread = Thread(function, 1, 2, 3)
+\end{lstbox}
+
+This also lends itself to an idiom I like, which is to create
+multiple Threads with a list comprehension:
+
+\begin{lstbox}{Multiple thread example}
+threads = [Thread(function, i, i, i) for i in range(10)]
+\end{lstbox}
+
+\section{Handling keyboard interrupts}
+
+One other problem with the {\tt threading} class is that 
+{\tt Thread.join} can't be interrupted by Ctrl-C, which
+generates the signal {\tt SIGINT}, which Python translates
+into a KeyboardInterrupt.
+
+%% \newpage
+So, if you write the following program:
+
+\begin{lstbox}{Unstoppable program}
+import threading, time
+
+class Thread(threading.Thread):
+    def __init__(self, t, *args):
+        threading.Thread.__init__(self, target=t, args=args)
+        self.start()
+
+def parent_code():
+    child = Thread(child_code, 10)
+    child.join()
+
+def child_code(n=10):
+    for i in range(n):
+        print i
+        time.sleep(1)
+    
+parent_code()
+\end{lstbox}
+
+You will find that it cannot be interrupted with Ctrl-C or
+a {\tt SIGINT}\footnote{At the time of this writing, this
+bug had been reported and assigned number 1167930, but it was
+open and unassigned (\url{https://sourceforge.net/projects/python/}).}.
+
+My workaround for this problem uses {\tt os.fork} and {\tt os.wait},
+so it only works on UNIX and Macintosh.  Here's how it works:
+before creating new threads, the program invokes {\tt watcher},
+which forks a new process.  The new process returns and executes
+the rest of the program.  The original process waits for the
+child process to complete, hence the name {\tt watcher}:
+
+\begin{lstbox}{The watcher}
+import threading, time, os, signal, sys
+
+class Thread(threading.Thread):
+    def __init__(self, t, *args):
+        threading.Thread.__init__(self, target=t, args=args)
+        self.start()
+
+def parent_code():
+    child = Thread(child_code, 10)
+    child.join()
+
+def child_code(n=10):
+    for i in range(n):
+        print i
+        time.sleep(1)
+
+def watcher():
+    child = os.fork()
+    if child == 0: return
+    try:
+        os.wait()
+    except KeyboardInterrupt:
+        print 'KeyboardInterrupt'
+        os.kill(child, signal.SIGKILL)
+    sys.exit()
+
+watcher()
+parent_code()
+\end{lstbox}
+
+If you run this version of the program, you should be able
+to interrupt it with Ctrl-C.  I am not sure, but I think it
+is guaranteed that the {\tt SIGINT} is delivered to the
+watcher process, so that's one less thing the
+parent and child threads have to deal with.
+
+I keep all this code in a file named {\tt threading\_cleanup.py},
+which you can download from
+\url{greenteapress.com/semaphores/threading\_cleanup.py}
+
+
+The examples in Chapter~\ref{pysync} are presented with the understanding
+that this code executes prior to the example code.
+

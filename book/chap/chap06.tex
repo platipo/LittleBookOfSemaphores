@@ -1,0 +1,453 @@
+\section{The search-insert-delete problem}
+
+This one is from Andrews's {\em Concurrent Programming} \cite{andrews}.
+
+\begin {quotation}
+Three kinds of threads share access to a singly-linked list:
+searchers, inserters and deleters.  Searchers merely examine the list;
+hence they can execute concurrently with each other.  Inserters add
+new items to the end of the list; insertions must be mutually
+exclusive to preclude two inserters from inserting new items at about
+the same time.  However, one insert can proceed in parallel with any
+number of searches.  Finally, deleters remove items from anywhere in
+the list.  At most one deleter process can access the list at a time,
+and deletion must also be mutually exclusive with searches and
+insertions.
+\end{quotation}
+
+\begin{puzzlebox}{Puzzle}
+Write code for searchers, inserters and deleters that
+enforces this kind of three-way categorical mutual exclusion.
+
+
+%% \clearemptydoublepage
+%%% \subsec{Search-Insert-Delete hint}
+\tcbsubtitle{Hint}
+
+\begin{lstbox}{Search-Insert-Delete hint}
+insertMutex = Semaphore(1)
+noSearcher = Semaphore(1)
+noInserter = Semaphore(1)
+searchSwitch = Lightswitch()
+insertSwitch = Lightswitch()
+\end{lstbox}
+
+{\tt insertMutex} ensures that only one inserter is in its critical
+section at a time.  {\tt noSearcher} and {\tt noInserter} indicate
+(surprise) that there are no searchers and no inserters in their
+critical sections; a deleter needs to hold both of these to enter.
+
+{\tt searchSwitch} and {\tt insertSwitch} are used by searchers and
+inserters to exclude deleters.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec{Search-Insert-Delete solution}
+\sub{Search-Insert-Delete solution}
+
+Here is my solution:
+
+\begin{lstbox}{Search-Insert-Delete solution (searcher)}
+searchSwitch.wait(noSearcher)
+# critical section
+searchSwitch.signal(noSearcher)
+\end{lstbox}
+
+The only thing a searcher needs to worry about is a deleter.
+The first searcher in takes {\tt noSearcher}; the last one out
+releases it.
+
+\begin{lstbox}{Search-Insert-Delete solution (inserter)}
+insertSwitch.wait(noInserter)
+insertMutex.wait()
+# critical section
+insertMutex.signal()
+insertSwitch.signal(noInserter)
+\end{lstbox}
+
+Similarly, the first inserter takes {\tt noInserter} and the last one
+out releases it.  Since searchers and inserters compete for different
+semaphores, they can be in their critical section concurrently.
+But {\tt insertMutex} ensures that only one inserter is in the room
+at a time.
+
+\begin{lstbox}{Search-Insert-Delete solution (deleter)}
+noSearcher.wait()
+noInserter.wait()
+# critical section
+noInserter.signal()
+noSearcher.signal()
+\end{lstbox}
+
+Since the deleter holds both {\tt noSearcher} and {\tt noInserter},
+it is guaranteed exclusive access.  Of course, any time we see
+a thread holding more than one semaphore, we need to check for
+deadlocks.  By trying out a few scenarios, you should be able
+to convince yourself that this solution is deadlock free.
+
+On the other hand, like many categorical exclusion problems, this
+one is prone to starvation.  As we saw in the Readers-Writers problem,
+we can sometimes mitigate this problem by giving priority to one
+category of threads according to application-specific criteria.
+But in general it is difficult to write an efficient solution
+(one that allows the maximum degree of concurrency)
+that avoids starvation.
+
+
+\blankpage
+\section{The unisex bathroom problem}
+
+I wrote this problem\footnote{Later I learned that a nearly
+identical problem appears in Andrews's 
+{\em Concurrent Programming}\cite{andrews}} when a friend of mine
+left her position teaching physics at Colby College
+and took a job at Xerox.
+
+She was working in a cubicle in the basement of a
+concrete monolith, and the nearest women's bathroom was two floors up.
+She proposed to the Uberboss that they convert the men's bathroom
+on her floor to a unisex bathroom, sort of like on Ally McBeal.
+
+The Uberboss agreed, provided that the following synchronization
+constraints can be maintained:
+
+\begin {itemize}
+
+\item There cannot be men and women in the bathroom
+at the same time.
+
+\item There should never be more than three
+employees squandering company time in the bathroom.
+
+\end{itemize}
+
+Of course the solution should avoid deadlock.  For now, though, don't
+worry about starvation.  You may assume that the bathroom is equipped
+with all the semaphores you need.
+
+
+%% \clearemptydoublepage
+%% \subsec {Unisex bathroom hint}
+\begin{puzzlebox}{Hint}
+
+Here are the variables I used in my solution:
+
+\begin{lstbox}{Unisex bathroom hint}
+empty = Semaphore(1)
+maleSwitch = Lightswitch()
+femaleSwitch = Lightswitch()
+maleMultiplex = Semaphore(3)
+femaleMultiplex = Semaphore(3)
+\end{lstbox}
+
+{\tt empty} is 1 if the room is empty and 0 otherwise.
+
+{\tt maleSwitch} allows men to bar women from the room.
+When the first male enters, the lightswitch locks {\tt empty}, barring women;
+When the last male exits, it unlocks {\tt empty}, allowing women
+to enter.  Women do likewise using {\tt femaleSwitch}.
+
+{\tt maleMultiplex} and {\tt femaleMultiplex} ensure that there are no
+more than three men and three women in the system at a time.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%% \subsec {Unisex bathroom solution}
+\sub{Unisex bathroom solution}
+
+Here is the female code:
+
+\begin{lstbox}{Unisex bathroom solution (female)}
+femaleSwitch.lock(empty)
+    femaleMultiplex.wait()
+        # bathroom code here
+    femaleMultiplex.signal()
+female Switch.unlock(empty)
+\end{lstbox}
+
+The male code is similar.
+
+Are there any problems with this solution?
+
+%% \clearemptydoublepage
+\newpage
+\subsec {No-starve unisex bathroom problem}
+
+The problem with the previous solution is that it allows starvation.
+A long line of women can arrive and enter while there is a man
+waiting, and vice versa.
+
+
+\begin{puzzlebox}{Puzzle}
+Fix the problem.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%% \subsec {No-starve unisex bathroom solution}
+\sub{No-starve unisex bathroom solution}
+
+As we have seen before, we can use a turnstile to allow one
+kind of thread to stop the flow of the other kind of thread.
+This time we'll look at the male code:
+
+\begin{lstbox}{No-starve unisex bathroom solution (male)}
+turnstile.wait()
+    maleSwitch.lock(empty)
+turnstile.signal()
+
+    maleMultiplex.wait()
+        # bathroom code here
+    maleMultiplex.signal()
+
+maleSwitch.unlock (empty)
+\end{lstbox}
+
+As long as there are men in the room, new arrivals will pass
+through the turnstile and enter.  If there are women in the room
+when a male arrives, the male will block inside the turnstile,
+which will bar all later arrivals (male and female) from entering
+until the current occupants leave.  At that point the male in
+the turnstile enters, possibly allowing additional males to enter.
+
+The female code is similar, so if there are men in the room an
+arriving female will get stuck in the turnstile, barring additional
+men.
+
+This solution may not be efficient.  If
+the system is busy, then there will often be several threads, male and
+female, queued on the turnstile.  Each time {\tt empty} is signaled,
+one thread will leave the turnstile and another will enter.  If the
+new thread is the opposite gender, it will promptly block, barring
+additional threads.  Thus, there will usually be only 1-2 threads in
+the bathroom at a time, and the system will not take full advantage
+of the available concurrency.
+
+
+\blankpage
+\section{Baboon crossing problem}
+
+This problem is adapted from Tanenbaum's {\em Operating Systems:
+Design and Implementation} \cite{tanenbaum}.
+There is a deep canyon somewhere in
+Kruger National Park, South Africa, and a single rope that spans the
+canyon.  Baboons can cross the canyon by swinging hand-over-hand on
+the rope, but if two baboons going in opposite directions meet in the
+middle, they will fight and drop to their deaths.  Furthermore,
+the rope is only strong enough to hold 5 baboons.  If there are
+more baboons on the rope at the same time, it will break.
+
+Assuming that we can teach the baboons to use semaphores, we
+would like to design a synchronization scheme with the following
+properties:
+
+\begin{itemize}
+
+\item Once a baboon has begun to cross, it is guaranteed
+to get to the other side without running into a baboon going
+the other way.
+
+\item There are never more than 5 baboons on the rope.
+
+\item A continuing stream of baboons crossing in one direction
+should not bar baboons going the other way indefinitely
+(no starvation).
+
+\end{itemize}
+
+I will not include a solution to this problem for reasons that
+should be clear.
+
+
+\blankpage
+\section{The Modus Hall Problem}
+
+This problem was written by Nathan Karst, one of the Olin students
+living in Modus Hall\footnote{Modus Hall is one of several nicknames
+for the modular buildings, aka Mods, that some students lived in while
+the second residence hall was being built.} during the winter of 2005.
+
+\begin{quote}
+After a particularly heavy snowfall this winter, the denizens of Modus
+Hall created a trench-like path between their cardboard shantytown and
+the rest of campus.  Every day some of the residents walk to and from
+class, food and civilization via the path; we will ignore the
+indolent students who chose daily to drive to Tier 3.  We will also
+ignore the direction in which pedestrians are traveling.  For some
+unknown reason, students living in West Hall would occasionally find it
+necessary to venture to the Mods.
+
+Unfortunately, the path is not wide enough to allow two people
+to walk side-by-side.  If two Mods persons meet at some point on the
+path, one will gladly step aside into the neck high drift to accommodate
+the other.  A similar situation will occur if two ResHall inhabitants
+cross paths.  If a Mods heathen and a ResHall prude meet, however, a
+violent skirmish will ensue with the victors determined solely by
+strength of numbers; that is, the faction with the larger population will
+force the other to wait.
+\end{quote}
+
+This is similar to the Baboon Crossing problem (in more ways than
+one), with the added twist that control of the critical section is
+determined by majority rule.  This has the potential to be an
+efficient and starvation-free solution to the categorical exclusion
+problem.
+
+Starvation is avoided because while one faction controls the critical
+section, members of the other faction accumulate in queue until they
+achieve a majority.  Then they can bar new opponents from entering
+while they wait for the critical section to clear.  I expect this
+solution to be efficient because it will tend to move threads through
+in batches, allowing maximum concurrency in the critical section.
+
+\begin{puzzlebox}{Puzzle}
+Write code that implements categorical exclusion with
+majority nule.
+
+
+%% \clearemptydoublepage
+%%% \subsec {Modus Hall problem hint}
+\tcbsubtitle{Hint}
+
+Here are the variables I used in my solution.
+
+\begin{lstbox}{Modus problem hint}
+heathens = 0
+prudes = 0
+status = 'neutral'
+mutex = Semaphore(1)
+heathenTurn = Semaphore(1)
+prudeTurn = Semaphore(1)
+heathenQueue = Semaphore(0)
+prudeQueue = Semaphore(0)
+\end{lstbox}
+
+{\tt heathens} and {\tt prudes} are counters, and {\tt status} records
+the status of the field, which can be `neutral', `heathens rule',
+`prudes rule', `transition to heathens' or `transition to prudes'.
+All three are protected by {\tt mutex} in the usual scoreboard
+pattern.
+
+{\tt heathenTurn} and {\tt prudeTurn} control access to the field
+so that we can bar one side or the other during a transition.
+
+{\tt heathenQueue} and {\tt prudeQueue} are where threads wait after
+checking in and before taking the field.
+\end{puzzlebox}
+
+
+%% \clearemptydoublepage
+%%% \subsec {Modus Hall problem solution}
+\sub{Modus Hall problem solution}
+
+Here is the code for heathens:
+
+\begin{lstbox}{Modus problem solution}
+heathenTurn.wait()
+heathenTurn.signal()
+(*\label{silentmajority}*)
+mutex.wait()
+heathens++
+
+if status == 'neutral':
+    status = 'heathens rule'
+    mutex.signal()
+elif status == 'prudes rule':
+    if heathens > prudes:
+        status = 'transition to heathens'
+        prudeTurn.wait()
+    mutex.signal()
+    heathenQueue.wait()
+elif status == 'transition to heathens':
+    mutex.signal()
+    heathenQueue.wait()
+else
+    mutex.signal()
+
+# cross the field
+
+mutex.wait()
+heathens--
+
+if heathens == 0:
+    if status == 'transition to prudes':
+        prudeTurn.signal()
+    if prudes:
+        prudeQueue.signal(prudes)
+        status = 'prudes rule'
+    else:
+        status = 'neutral'
+        
+if status == 'heathens rule':
+    if prudes > heathens:
+        status = 'transition to prudes'
+        heathenTurn.wait()
+
+mutex.signal()
+\end{lstbox}
+
+As each student checks in, he has to
+consider the following cases:
+
+\begin{itemize}
+
+\item If the field is empty, the student lays claim for the heathens.
+
+\item If the heathens currently in charge, but the new arrival
+has tipped the balance, he locks the prude turnstile and the
+system switches to transition mode.
+
+\item If the prudes in charge, but the new arrival doesn't
+tip the balance, he joins the queue.
+
+\item If the system is transitioning to heathen control, the new arrival
+joins the queue.
+
+\item Otherwise we conclude that either the heathens are in charge, or the
+system is transitioning to prude control.  In either case, this
+thread can proceed.
+
+\end{itemize}  
+
+Similarly, as each student checks out, she has to consider several
+cases.  
+
+\begin{itemize}
+
+\item If she is the last heathen to check out, she has to
+consider the following:
+
+    \begin{itemize}
+
+    \item If the system is in transition, that means that the prude
+      turnstile is locked, so she has to open it.
+
+    \item If there are prudes waiting, she signals them and
+      updates {\tt status} so the prudes are in charge.  If not, the
+      new status is 'neutral'.
+
+    \end{itemize}  
+
+\item If she is not the last heathen to check out, she still has to
+check the possibility that her departure will tip the balance.  In
+that case, she closes the heathen turnstile and starts the
+transition.
+
+\end{itemize}
+
+One potential difficulty of this solution is that any number
+of threads could be interrupted at Line~\ref{silentmajority},
+where they would have passed the turnstile but not yet checked in.
+Until they check in, they are not counted, so the balance of
+power may not reflect the number of threads that have passed the
+turnstile.  Also, a transition ends when all the threads that have
+checked in have also checked out.  At that point, there may
+be threads (of both types) that have passed the turnstile.
+
+These behaviors may affect efficiency---this solution does
+not guarantee maximum concurrency---but they don't affect
+correctness, if you accept that ``majority rule'' only applies
+to threads that have registered to vote.
+

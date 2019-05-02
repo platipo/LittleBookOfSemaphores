@@ -1,0 +1,340 @@
+\section{Synchronization}
+\label{synch}
+
+In common use, ``synchronization'' means making two things happen
+at the same time.  In computer systems, synchronization is a little
+more general; it refers to relationships among events---any number
+of events, and any kind of relationship (before, during, after).
+
+Computer programmers are often concerned with {\bf synchronization
+constraints}, which are requirements pertaining to the order of
+events.  Examples include:
+
+\begin{description}
+
+\item[Serialization:] Event A must happen before Event B.
+
+\item[Mutual exclusion:] Events A and B must not happen at the same time.
+
+\end{description}
+
+In real life we often check and enforce synchronization constraints 
+using a clock.  How do we know if A happened before B?  If we
+know what time both events occurred, we can just compare the times.
+
+In computer systems, we often need to satisfy synchronization
+constraints without the benefit of a clock, either because there
+is no universal clock, or because we don't know with fine enough
+resolution when events occur.
+
+That's what this book is about: software techniques for enforcing
+synchronization constraints.
+
+
+\section {Execution model}
+
+In order to understand software synchronization, you have to
+have a model of how computer programs run.  In the simplest
+model, computers execute one instruction after another in
+sequence.  In this model, synchronization is trivial; we can
+tell the order of events by looking at the program.  If Statement
+A comes before Statement B, it will be executed first.
+
+There are two ways things get more complicated.  One possibility
+is that the computer is parallel, meaning that it has multiple
+processors running at the same time.  In that case it is not easy
+to know if a statement on one processor is executed before a
+statement on another.
+
+Another possibility is that a single processor is running multiple
+threads of execution.  A thread is a sequence of instructions
+that execute sequentially.  If there are multiple threads, then
+the processor can work on one for a while, then switch to
+another, and so on.
+
+In general the programmer has no control over when each thread runs;
+the operating system (specifically, the scheduler) makes those
+decisions.  As a result, again, the programmer can't tell when
+statements in different threads will be executed.
+
+For purposes of synchronization, there is no difference between the
+parallel model and the multithread model.  The issue is the
+same---within one processor (or one thread) we know the order of
+execution, but between processors (or threads) it is impossible to
+tell.
+
+A real world example might make this clearer.  Imagine that you and
+your friend Bob live in different cities, and one day, around dinner
+time, you start to wonder who ate lunch first that day, you or Bob.
+How would you find out?
+
+Obviously you could call him and ask what time he ate lunch.  But what
+if you started lunch at 11:59 by your clock and Bob started lunch at
+12:01 by his clock?  Can you be sure who started first?  Unless you
+are both very careful to keep accurate clocks, you can't.
+
+Computer systems face the same problem because, even though their
+clocks are usually accurate, there is always a limit to their
+precision.  In addition, most of the time the computer does not keep
+track of what time things happen.  There are just too many things
+happening, too fast, to record the exact time of everything.
+
+Puzzle: Assuming that Bob is willing to follow simple instructions, is
+there any way you can {\em guarantee} that tomorrow you will eat lunch
+before Bob?
+
+%% \clearemptydoublepage
+\section {Serialization with messages}
+\label{serialization}
+
+One solution is to instruct Bob not to eat lunch until you call.
+Then, make sure you don't call until after lunch.  This approach may
+seem trivial, but the underlying idea, message passing, is a real
+solution for many synchronization problems.
+At the risk of belaboring the obvious, consider this timeline.
+
+\begin{lsthalfbox}[before skip=0.6em]{Thread A}
+Eat breakfast 
+Work          
+Eat lunch     
+Call Bob
+\end{lsthalfbox}
+\begin{lsthalfbox}[after skip=0.6em]{Thread B}
+Eat breakfast
+Wait for a call
+Eat lunch
+\end{lsthalfbox}
+
+The first column is a list of actions you perform; in other words,
+your thread of execution.  The second column is Bob's thread of
+execution.  Within a thread, we can always tell what order things
+happen.  We can denote the order of events
+%
+\begin{eqnarray*}
+a1 < a2 < a3 < a4  \\
+b1 < b2 < b3
+\end{eqnarray*}
+%
+where the relation $a1 < a2$ means that a1 happened before a2.
+
+In general, though, there is no way to compare events from different
+threads; for example, we have no idea who ate breakfast first (is $a1
+< b1$?).
+
+But with message passing (the phone call) we {\em can} tell who ate
+lunch first ($a3 < b3$).  Assuming that Bob has no other friends, he
+won't get a call until you call, so $b2 > a4$ .  Combining all the
+relations, we get
+%
+\begin{eqnarray*}
+b3 > b2 > a4 > a3
+\end{eqnarray*}
+%
+which proves that you had lunch before Bob.
+
+In this case, we would say that you and Bob ate lunch
+{\bf sequentially}, because we know the order of events, and you
+ate breakfast {\bf concurrently}, because we don't.
+
+When we talk about concurrent events, it is tempting to say
+that they happen at the same time, or simultaneously.  As a
+shorthand, that's fine, as long as you remember the strict
+definition:
+
+\begin{quote}
+Two events are concurrent if we cannot tell by looking at
+the program which will happen first.
+\end{quote}
+
+Sometimes we can tell, after the program runs, which happened first,
+but often not, and even if we can, there is no guarantee that we will
+get the same result the next time.
+
+
+%% \newpage
+\section {Non-determinism}
+
+Concurrent programs are often {\bf non-deterministic}, which means it
+is not possible to tell, by looking at the program, what will happen
+when it executes.  Here is a simple example of a
+non-deterministic program:
+
+\begin{lsthalfbox}[before skip=0.6em]{Thread A}
+print "yes"
+\end{lsthalfbox}
+\begin{lsthalfbox}[after skip=0.6em]{Thread B}
+print "no"
+\end{lsthalfbox}
+
+Because the two threads run concurrently, the order of
+execution depends on the scheduler.  During any given run
+of this program, the output might be ``yes no'' or ``no yes''.
+
+Non-determinism is one of the things that makes concurrent
+programs hard to debug.  A program might work correctly
+1000 times in a row, and then crash on the 1001st run, depending
+on the particular decisions of the scheduler.
+
+These kinds of bugs are almost impossible to find by testing;
+they can only be avoided by careful programming.
+
+
+\section {Shared variables}
+\label{shared}
+
+Most of the time, most variables in most threads are {\bf local},
+meaning that they belong to a single thread and no other threads
+can access them.  As long as that's true, there tend to be few
+synchronization problems, because threads just don't interact.
+
+But usually some variables are {\bf shared} among two or more
+threads; this is one of the ways threads interact with each other.
+For example, one way to communicate information between threads is
+for one thread to read a value written by another thread.
+
+If the threads are unsynchronized, then we cannot tell by looking at
+the program whether the reader will see the value the writer writes
+or an old value that was already there.
+Thus many applications enforce the constraint that the reader
+should not read until after the writer writes.  This is exactly
+the serialization problem in Section~\ref{serialization}.
+
+Other ways that threads interact are
+concurrent writes (two or more writers) and concurrent updates
+(two or more threads performing a read followed by a write).
+The next two sections deal with these interactions.  The other
+possible use of a shared variable, concurrent
+reads, does not generally create a synchronization problem.
+
+
+\subsec{Concurrent writes}
+
+In the following example, {\tt x} is a shared variable accessed
+by two writers.
+
+\begin{lsthalfbox}[before skip=0.6em]{Thread A}
+x = 5
+print x
+\end{lsthalfbox}
+\begin{lsthalfbox}[after skip=0.6em]{Thread B}
+x = 7
+\end{lsthalfbox}
+
+What value of {\tt x} gets printed?  What is the final value of {\tt
+x} when all these statements have executed?  It depends on the order
+in which the statements are executed, called the {\bf execution path}.
+One possible path is $a1 < a2 < b1$, in which case the output of the
+program is {\tt 5}, but the final value is {\tt 7}.
+
+Puzzle: What path yields output {\tt 5} and final
+value {\tt 5}?
+
+Puzzle: What path yields output {\tt 7} and final
+value {\tt 7}?
+
+Puzzle: Is there a path that yields output {\tt 7} and final
+value {\tt 5}?  Can you prove it?
+
+Answering questions like these is an important part of concurrent
+programming:  What paths are possible and what are the
+possible effects?  Can we prove that a given (desirable) effect is
+necessary or that an (undesirable) effect is impossible?
+
+
+\subsec{Concurrent updates}
+
+An update is an operation that reads the value of a variable, computes
+a new value based on the old value, and writes the new value.
+The most common kind of update is an increment, in which the
+new value is the old value plus one.  The following example
+shows a shared variable, {\tt count}, being updated concurrently
+by two threads.
+\begin{lsthalfbox}[before skip=0.6em]{Thread A}
+count = count + 1
+\end{lsthalfbox}
+\begin{lsthalfbox}[after skip=0.6em]{Thread B}
+count = count + 1
+\end{lsthalfbox}
+
+At first glance, it is not obvious that there is a synchronization
+problem here.  There are only two execution paths, and they
+yield the same result.
+
+The problem is that these operations are translated into
+machine language before execution, and in machine language
+the update takes two steps, a read and a write.
+The problem is more obvious if we rewrite the code with a temporary
+variable, {\tt temp}.
+\begin{lsthalfbox}[before skip=0.6em]{Thread A}
+temp = count
+count = temp + 1
+\end{lsthalfbox}
+\begin{lsthalfbox}[after skip=0.6em]{Thread B}
+temp = count
+count = temp + 1
+\end{lsthalfbox}
+
+Now consider the following execution path 
+
+\[  a1 < b1 < b2 < a2  \]
+
+Assuming that the
+initial value of {\tt x} is {\tt 0},
+what is its final value?  Because
+both threads read the same initial value, they write
+the same value.  The variable is only incremented once, which
+is probably not what the programmer had in mind.
+
+This kind of problem is subtle because it is not always possible to
+tell, looking at a high-level program, which operations are
+performed in a single step and which can be interrupted.
+In fact, some computers provide an increment instruction that
+is implemented in hardware and cannot be interrupted.
+An operation that cannot be interrupted is said to be
+{\bf atomic}.
+
+So how can we write concurrent programs if we don't know which
+operations are atomic?  One possibility is to collect specific
+information about each operation on each hardware platform.
+The drawbacks of this approach are obvious.
+
+The most common alternative is to make the conservative
+assumption that all updates and all writes are not atomic,
+and to use synchronization constraints to control concurrent
+access to shared variables.
+
+The most common constraint is mutual exclusion, or mutex,
+which I mentioned in Section~\ref{synch}.  Mutual exclusion guarantees
+that only one thread accesses a shared variable at a time,
+eliminating the kinds of synchronization errors in this section.
+
+Puzzle: Suppose that 100 threads run the following program concurrently
+(if you are not familiar with Python, the {\tt for} loop runs the update
+100 times.):
+
+\begin{lstbox}{}
+for i in range(100):
+    temp = count
+    count = temp + 1
+\end{lstbox}
+
+What is the largest possible value of {\tt count} after all threads
+have completed?  What is the smallest possible value?
+
+Hint: the first question is easy; the second is not.
+
+\subsec {Mutual exclusion with messages}
+
+Like serialization, mutual exclusion
+can be implemented using message passing.  For example, imagine that
+you and Bob operate a nuclear reactor that you monitor from remote
+stations.  Most of the time, both of you are watching for warning
+lights, but you are both allowed to take a break for lunch.  It
+doesn't matter who eats lunch first, but it is very important that
+you don't eat lunch at the same time, leaving the reactor unwatched!
+
+Puzzle: Figure out a system of message passing (phone calls) that
+enforces these restraints.  Assume there are no clocks, and you
+cannot predict when lunch will start or how long it will last.  What
+is the minimum number of messages that is required?
+
