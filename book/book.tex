@@ -110,6 +110,8 @@
     \vspace{-0.4em}
 }
 
+\def \localizationPath {en/}
+
 \makeindex
 
 \begin{document}
@@ -120,7 +122,7 @@
 
 \chapter{Preface}
 
-\input{chap/chap00}
+\input{chap/\localizationPath chap00}
 
 \else
 \null
@@ -136,7 +138,7 @@ Copyright 2016 Allen B. Downey
 \end{center}
 \vspace{0.25in}
 
-\input{chap/copr}
+\input{chap/\localizationPath copr}
 
 \ifnotcompact
 \else
@@ -151,49 +153,49 @@ Copyright 2016 Allen B. Downey
 
 \chapter{Introduction}
 
-\input{chap/chap01}
+\input{chap/\localizationPath chap01}
 
 %% \clearemptydoublepage
 \chapter{Semaphores}
 
-\input{chap/chap02}
+\input{chap/\localizationPath chap02}
 
 %% \clearemptydoublepage
 \chapter{Basic synchronization patterns}
 
-\input{chap/chap03}
+\input{chap/\localizationPath chap03}
 
 \clearemptydoublepage
 \chapter{Classical synchronization problems}
 
-\input{chap/chap04}
+\input{chap/\localizationPath chap04}
 
 \clearemptydoublepage
 \chapter{Less classical synchronization problems}
 \label{next}
 
-\input{chap/chap05}
+\input{chap/\localizationPath chap05}
 
 \clearemptydoublepage
 \chapter{Not-so-classical problems}
 
-\input{chap/chap06}
+\input{chap/\localizationPath chap06}
 
 \clearemptydoublepage
 \chapter{Not remotely classical problems}
 
-\input{chap/chap07}
+\input{chap/\localizationPath chap07}
 
 \ifnotcompact
 \chapter{Synchronization in Python}
 \label{pysync}
 
-\input{chap/chap08}
+\input{chap/\localizationPath chap08}
 
 \chapter{Synchronization in C}
 \label{csync}
 
-\input{chap/chap09}
+\input{chap/\localizationPath chap09}
 
 \fi
 
@@ -209,12 +211,12 @@ Copyright 2016 Allen B. Downey
 \chapter{Cleaning up Python threads}
 \label{cleanup}
 
-\input{chap/appx01}
+\input{chap/\localizationPath appx01}
 
 \chapter{Cleaning up POSIX threads}
 \label{ccleanup}
 
-\input{chap/appx02}
+\input{chap/\localizationPath appx02}
 
 \fi
 
