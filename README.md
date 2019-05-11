@@ -1,4 +1,7 @@
+
 # LittleBookOfSemaphores
+
+[![download](https://img.shields.io/badge/download-book-success.svg?style=popout-square&logo=github)](https://raw.githubusercontent.com/platipo/LittleBookOfSemaphores/master/book/LittleBookOfSemaphores.pdf)
 
 LaTeX source and supporting code for The Little Book of Semaphores, by Allen Downey.
 
