@@ -26,10 +26,12 @@
 
 \usepackage[colorlinks=true, linkcolor=blue, urlcolor=blue]{hyperref}
 
+\def \localizationPath {en/}
+\input{chap/\localizationPath const}
 
-\title{The Little Book of Semaphores}
-\author{Allen B. Downey}
-\newcommand{\theversion}{Version 2.2.1}
+\title{\titleConst}
+\author{\authorConst}
+\newcommand{\theversion}{\versionConst}
 
 \sloppy
 
@@ -110,8 +112,6 @@
     \vspace{-0.4em}
 }
 
-\def \localizationPath {en/}
-
 \makeindex
 
 \begin{document}
@@ -120,7 +120,7 @@
 \ifnotcompact
 \frontmatter
 
-\chapter{Preface}
+\chapter{\chapZeroZeroConst}
 
 \input{chap/\localizationPath chap00}
 
@@ -131,10 +131,10 @@
 \vfill
 
 \begin{center}
-The Little Book of Semaphores, second edition, \theversion
+\titleConst, \editionConst, \theversion
 \vspace{0.25in}
 
-Copyright 2016 Allen B. Downey
+Copyright 2016 \authorConst
 \end{center}
 \vspace{0.25in}
 
@@ -151,48 +151,48 @@ Copyright 2016 Allen B. Downey
 \mainmatter
 
 
-\chapter{Introduction}
+\chapter{\chapZeroZeroConst}
 
 \input{chap/\localizationPath chap01}
 
 %% \clearemptydoublepage
-\chapter{Semaphores}
+\chapter{\chapZeroTwoConst}
 
 \input{chap/\localizationPath chap02}
 
 %% \clearemptydoublepage
-\chapter{Basic synchronization patterns}
+\chapter{\chapZeroThreeConst}
 
 \input{chap/\localizationPath chap03}
 
 \clearemptydoublepage
-\chapter{Classical synchronization problems}
+\chapter{\chapZeroFourConst}
 
 \input{chap/\localizationPath chap04}
 
 \clearemptydoublepage
-\chapter{Less classical synchronization problems}
+\chapter{\chapZeroFiveConst}
 \label{next}
 
 \input{chap/\localizationPath chap05}
 
 \clearemptydoublepage
-\chapter{Not-so-classical problems}
+\chapter{\chapZeroSixConst}
 
 \input{chap/\localizationPath chap06}
 
 \clearemptydoublepage
-\chapter{Not remotely classical problems}
+\chapter{\chapZeroSevenConst}
 
 \input{chap/\localizationPath chap07}
 
 \ifnotcompact
-\chapter{Synchronization in Python}
+\chapter{\chapZeroEightConst}
 \label{pysync}
 
 \input{chap/\localizationPath chap08}
 
-\chapter{Synchronization in C}
+\chapter{\chapZeroNineConst}
 \label{csync}
 
 \input{chap/\localizationPath chap09}
@@ -200,7 +200,7 @@ Copyright 2016 Allen B. Downey
 \fi
 
 \phantomsection
-\addcontentsline{toc}{chapter}{Bibliography}
+\addcontentsline{toc}{chapter}{\bibliographyConst}
 
 \bibliographystyle{plain}
 \bibliography{book}
@@ -208,12 +208,12 @@ Copyright 2016 Allen B. Downey
 \ifnotcompact
 \appendix
 
-\chapter{Cleaning up Python threads}
+\chapter{\appxZeroOneConst}
 \label{cleanup}
 
 \input{chap/\localizationPath appx01}
 
-\chapter{Cleaning up POSIX threads}
+\chapter{\appxZeroTwoConst}
 \label{ccleanup}
 
 \input{chap/\localizationPath appx02}
