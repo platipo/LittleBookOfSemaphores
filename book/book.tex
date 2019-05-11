@@ -12,6 +12,15 @@
  left=20mm,
  top=20mm,
 ]{geometry}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[activate={true,nocompatibility},
+    final,tracking=true,kerning=true,spacing=true,
+    factor=1100,stretch=10,shrink=10]%
+    {microtype} % http://www.khirevich.com/latex/microtype/
+
 \usepackage{fancyhdr}
 \usepackage{listings}
 \usepackage{graphicx}
@@ -53,6 +62,13 @@
 \newif\ifnotcompact
 \notcompacttrue
 %\notcompactfalse
+
+\usepackage{scrextend}
+\ifnotcompact
+\changefontsizes{12pt}
+\else
+\changefontsizes[12.2pt]{9.8pt}
+\fi
 
 \ifnotcompact
 \colorlet{PUZZCOLFRAM}{blue!30!black!85}
